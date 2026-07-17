@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/model-tier-router/router-decision.schema.json",
+  "title": "Integrated Model Tier Router Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "decision_id",
+    "task_class",
+    "risk_class",
+    "model_tier",
+    "reasoning_budget",
+    "write_authority",
+    "approval",
+    "validation",
+    "fail_closed",
+    "route_binding",
+    "accounting",
+    "provider_or_model_call_count",
+    "network_request_count"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "model_tier_router_decision_v1"
+    },
+    "decision_id": {
+      "type": "string",
+      "pattern": "^decision_[0-9a-f]{64}$"
+    },
+    "task_class": {
+      "type": "string",
+      "enum": [
+        "action_warrant",
+        "ambiguous_debugging",
+        "authority_boundary_design",
+        "bounded_source_change",
+        "bounded_source_test_change",
+        "capability_binding",
+        "capability_gateway",
+        "command_status_unknown",
+        "deploy",
+        "deterministic_smoke",
+        "focused_test_change",
+        "json_schema_validation",
+        "live_action",
+        "local_preview_tool",
+        "log_summary",
+        "manifest_validation",
+        "packet_summary",
+        "production_write",
+        "publish",
+        "read_only_extraction",
+        "release",
+        "schema_validation",
+        "security_boundary",
+        "simple_docs_manifest",
+        "source_test_change",
+        "unknown",
+        "validation_profile",
+        "validation_supervisor",
+        "windows_process_temp_path_failure",
+        "write_boundary_issue"
+      ]
+    },
+    "risk_class": {
+      "type": "string",
+      "enum": ["fast", "controlled", "locked", "unknown"]
+    },
+    "model_tier": {
+      "type": "string",
+      "enum": ["cheap", "medium", "expensive"]
+    },
+    "reasoning_budget": {
+      "type": "string",
+      "enum": ["minimal", "low", "medium", "high", "xhigh"]
+    },
+    "write_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "scope"],
+      "properties": {
+        "allowed": {"type": "boolean"},
+        "scope": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewer_required", "human_required", "approval_reference"],
+      "properties": {
+        "reviewer_required": {"type": "boolean"},
+        "human_required": {"type": "boolean"},
+        "approval_reference": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligation", "supervised_full_suite_required"],
+      "properties": {
+        "obligation": {
+          "type": "string",
+          "enum": ["not_required", "conditional", "conditional_supervised", "required"]
+        },
+        "supervised_full_suite_required": {"type": "boolean"}
+      }
+    },
+    "fail_closed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "code"],
+      "properties": {
+        "status": {"type": "string", "enum": ["clear", "hard_stop"]},
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*(?::[A-Za-z0-9_.-]+)?$"
+        }
+      }
+    },
+    "route_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_path_required", "direct_model_override_allowed"],
+      "properties": {
+        "canonical_path_required": {"type": "boolean", "const": true},
+        "direct_model_override_allowed": {"type": "boolean", "const": false}
+      }
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["budget_class", "authority_receipt_id", "authority_state"],
+      "properties": {
+        "budget_class": {
+          "type": "string",
+          "enum": ["small", "normal", "elevated", "locked"]
+        },
+        "authority_receipt_id": {"type": ["string", "null"], "minLength": 1},
+        "authority_state": {
+          "type": "string",
+          "enum": ["unverified", "valid_unconsumed", "mismatched", "consumed"]
+        }
+      }
+    },
+    "legacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "full_suite_policy",
+        "max_attempts_before_escalation",
+        "recommended_runner",
+        "stop_conditions"
+      ],
+      "properties": {
+        "full_suite_policy": {
+          "type": "string",
+          "enum": [
+            "blocked_for_read_only_labor",
+            "blocked_until_explicit_warrant",
+            "conditional_supervised_full_suite_only",
+            "not_expected",
+            "supervised_full_suite_only"
+          ]
+        },
+        "max_attempts_before_escalation": {"type": "integer", "minimum": 0},
+        "recommended_runner": {"type": "string", "minLength": 1},
+        "stop_conditions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "provider_or_model_call_count": {"type": "integer", "const": 0},
+    "network_request_count": {"type": "integer", "const": 0}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "fail_closed": {
+            "properties": {"status": {"const": "clear"}}
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fail_closed": {"properties": {"code": {"const": "OK"}}},
+          "accounting": {
+            "properties": {"authority_state": {"const": "valid_unconsumed"}}
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "fail_closed": {"properties": {"code": {"not": {"const": "OK"}}}},
+          "write_authority": {
+            "properties": {
+              "allowed": {"const": false},
+              "scope": {"maxItems": 0}
+            }
+          },
+          "accounting": {
+            "properties": {
+              "authority_state": {"enum": ["unverified", "mismatched", "consumed"]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "write_authority": {"properties": {"allowed": {"const": true}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "write_authority": {"properties": {"scope": {"minItems": 1}}}
+        }
+      },
+      "else": {
+        "properties": {
+          "write_authority": {"properties": {"scope": {"maxItems": 0}}}
+        }
+      }
+    },
+
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "model_tier": {"const": "cheap"},
+            "reasoning_budget": {"enum": ["minimal", "low"]},
+            "accounting": {"properties": {"budget_class": {"const": "small"}}}
+          }
+        },
+        {
+          "properties": {
+            "model_tier": {"const": "medium"},
+            "reasoning_budget": {"const": "medium"},
+            "accounting": {"properties": {"budget_class": {"const": "normal"}}}
+          }
+        },
+        {
+          "properties": {
+            "model_tier": {"const": "expensive"},
+            "reasoning_budget": {"const": "high"},
+            "accounting": {"properties": {"budget_class": {"const": "elevated"}}}
+          }
+        },
+        {
+          "properties": {
+            "model_tier": {"const": "expensive"},
+            "reasoning_budget": {"const": "xhigh"},
+            "accounting": {"properties": {"budget_class": {"const": "locked"}}}
+          }
+        }
+      ]
+    }
+  ]
+}

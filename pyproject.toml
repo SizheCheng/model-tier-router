@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-tier-router"
+version = "0.1.0"
+description = "Deterministic offline routing to logical LLM capability profiles"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "Sizhe Cheng"}]
+dependencies = []
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Libraries :: Python Modules"
+]
+
+[project.urls]
+Documentation = "https://github.com/SizheCheng/model-tier-router#readme"
+Issues = "https://github.com/SizheCheng/model-tier-router/issues"
+Source = "https://github.com/SizheCheng/model-tier-router"
+
+[project.scripts]
+model-tier-router = "model_tier_router.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.data-files]
+"model_tier_router/data/schemas" = [
+  "schemas/advisory-decision.schema.json",
+  "schemas/advisory-request.schema.json",
+  "schemas/capability-profile.schema.json",
+  "schemas/policy.schema.json",
+  "schemas/governed/router-assessment.schema.json",
+  "schemas/governed/router-decision.schema.json",
+  "schemas/governed/task-envelope.schema.json"
+]
+"model_tier_router/data" = [
+  "examples/policies/default-policy.json",
+  "examples/profiles/default-profiles.json"
+]

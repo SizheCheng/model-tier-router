@@ -1,0 +1,41 @@
+[
+  {
+    "schema_version": "model_tier_router_capability_profile_v1alpha1",
+    "profile_id": "economy",
+    "reasoning_class": "basic",
+    "context_window_class": "small",
+    "modalities": ["text"],
+    "tool_support": false,
+    "structured_output_support": true,
+    "latency_class": "low",
+    "cost_class": "low",
+    "privacy_classes": ["standard"],
+    "deployment_boundaries": ["local", "managed"]
+  },
+  {
+    "schema_version": "model_tier_router_capability_profile_v1alpha1",
+    "profile_id": "balanced",
+    "reasoning_class": "standard",
+    "context_window_class": "medium",
+    "modalities": ["image", "text"],
+    "tool_support": true,
+    "structured_output_support": true,
+    "latency_class": "medium",
+    "cost_class": "medium",
+    "privacy_classes": ["restricted", "standard"],
+    "deployment_boundaries": ["local", "managed"]
+  },
+  {
+    "schema_version": "model_tier_router_capability_profile_v1alpha1",
+    "profile_id": "premium",
+    "reasoning_class": "advanced",
+    "context_window_class": "large",
+    "modalities": ["audio", "image", "text"],
+    "tool_support": true,
+    "structured_output_support": true,
+    "latency_class": "high",
+    "cost_class": "high",
+    "privacy_classes": ["restricted", "standard"],
+    "deployment_boundaries": ["local", "managed"]
+  }
+]

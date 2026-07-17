@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://model-tier-router.invalid/policy.schema.json",
+  "title": "Declarative Router Policy v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "policy_id", "required_evidence", "hard_constraints",
+    "soft_preferences", "class_orders", "escalation"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "model_tier_router_policy_v1alpha1"},
+    "policy_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "required_evidence": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["context_window", "deployment_boundary", "modalities", "privacy", "structured_output", "tool_support"]
+      }
+    },
+    "hard_constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "field", "operator", "value"],
+        "properties": {
+          "rule_id": {"type": "string", "minLength": 1},
+          "field": {
+            "type": "string",
+            "enum": [
+              "reasoning_class", "context_window_class", "modalities", "tool_support",
+              "structured_output_support", "latency_class", "cost_class",
+              "privacy_classes", "deployment_boundaries"
+            ]
+          },
+          "operator": {"type": "string", "enum": ["at_least", "at_most", "contains", "contains_all", "equals"]},
+          "value": {
+            "oneOf": [
+              {"type": "string"},
+              {"type": "boolean"},
+              {"type": "integer"},
+              {"type": "array", "items": {"type": "string"}}
+            ]
+          }
+        }
+      }
+    },
+    "soft_preferences": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["lower_cost", "lower_latency", "higher_reasoning", "larger_context"]}
+    },
+    "class_orders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reasoning_class", "context_window_class", "latency_class", "cost_class"],
+      "properties": {
+        "reasoning_class": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "context_window_class": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "latency_class": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "cost_class": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum_profile", "maximum_attempts", "condition_codes"],
+      "properties": {
+        "maximum_profile": {"type": "string", "minLength": 1},
+        "maximum_attempts": {"type": "integer", "minimum": 0, "maximum": 10},
+        "condition_codes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

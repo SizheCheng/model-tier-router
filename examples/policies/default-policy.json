@@ -1,0 +1,18 @@
+{
+  "schema_version": "model_tier_router_policy_v1alpha1",
+  "policy_id": "default-balanced-v1alpha1",
+  "required_evidence": [],
+  "hard_constraints": [],
+  "soft_preferences": ["lower_cost", "lower_latency", "higher_reasoning"],
+  "class_orders": {
+    "reasoning_class": ["basic", "standard", "advanced"],
+    "context_window_class": ["small", "medium", "large"],
+    "latency_class": ["low", "medium", "high"],
+    "cost_class": ["low", "medium", "high"]
+  },
+  "escalation": {
+    "maximum_profile": "premium",
+    "maximum_attempts": 2,
+    "condition_codes": ["QUALITY_INSUFFICIENT", "CONTEXT_LIMIT_REACHED"]
+  }
+}

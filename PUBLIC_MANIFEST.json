@@ -1,0 +1,252 @@
+{
+  "schema_version": "model_tier_router_public_manifest_v1",
+  "source_head": "a455debff9a01faa5481cb8a6ca98e31e29ec52a",
+  "file_count": 49,
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "byte_count": 474,
+      "sha256": "362dd4616f03ff30d1c2048854eaa8080deff95812b28fdc84776070a25645cd"
+    },
+    {
+      "path": ".gitignore",
+      "byte_count": 80,
+      "sha256": "aeb3164030091488eb1e33f910279e699f9902b9a17f13c281266d6eafaf58dc"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "byte_count": 558,
+      "sha256": "d7835dd40462ede20f8efd1dcaeba4c2f83b32785b1adc8050e3a274021f0975"
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "byte_count": 583,
+      "sha256": "e6ef3215e55c2d39c8ec50380cd8ce8a6e8d22d4e9170d20e5ce18a24f49fd09"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "byte_count": 609,
+      "sha256": "88d0e1aeed5425c76a0779ca1c678f99639d165c4e310787479302cfd71a3317"
+    },
+    {
+      "path": "docs/architecture.md",
+      "byte_count": 1219,
+      "sha256": "8b2c348cd83d46a45c4654b7158b11b48a759830a79ef7f8d0adaef16c60b503"
+    },
+    {
+      "path": "docs/compatibility.md",
+      "byte_count": 830,
+      "sha256": "c38b93727a70055800baec842a03123b042bff3635e8a3e02e94330568f55207"
+    },
+    {
+      "path": "docs/governed-mode.md",
+      "byte_count": 938,
+      "sha256": "5d1279670e8bde8e4939f1abd1aeae9b30d03ae74528f6bbfb76cbc3a42fe741"
+    },
+    {
+      "path": "examples/policies/default-policy.json",
+      "byte_count": 622,
+      "sha256": "64ed43ac3ee3b2ed6e52b1ac00f71e7dfb7865c0f7d97b525e077647091826a3"
+    },
+    {
+      "path": "examples/profiles/default-profiles.json",
+      "byte_count": 1308,
+      "sha256": "4e2c8a211bc7dadfe9aeb0bac66b1d7c17e9aad20261b619de1370ed2ad9ac1c"
+    },
+    {
+      "path": "examples/requests/text-tools.json",
+      "byte_count": 348,
+      "sha256": "7d6f84eb6a6dc4ab2b82b782c36cc973ccc3b8fcd1090fca4f9021e05ae30494"
+    },
+    {
+      "path": "integrations/codex/model-tier-route/agents/openai.yaml",
+      "byte_count": 289,
+      "sha256": "bd556dc5f214c3b011313a9f735b6d2f7a894b410ef7b8560b763513e6be1b6d"
+    },
+    {
+      "path": "integrations/codex/model-tier-route/references/USAGE.md",
+      "byte_count": 938,
+      "sha256": "2752ad0141e5a20cef0df63718b45d791bc9dc7dd8b398862ec7da5ad45626f8"
+    },
+    {
+      "path": "integrations/codex/model-tier-route/scripts/route_task.py",
+      "byte_count": 230,
+      "sha256": "290074055e5f32cb7d9039403ab25458ad13576493028636e28f21799bc8fcdb"
+    },
+    {
+      "path": "integrations/codex/model-tier-route/SKILL.md",
+      "byte_count": 1007,
+      "sha256": "045a356c5d34172118ab4c785e6aa20b8b0904d0aa05d6855e5db9034f314684"
+    },
+    {
+      "path": "LICENSE",
+      "byte_count": 11340,
+      "sha256": "035cd59cf76ea55a644858e471be6888c59ca4ff69ad9d8039b5137330e1bfb6"
+    },
+    {
+      "path": "PROVENANCE.md",
+      "byte_count": 898,
+      "sha256": "723302452ff4bf8f7692c2bc1ed47ad7eda9fc5a0c81904cd133c5b4efb7c74d"
+    },
+    {
+      "path": "pyproject.toml",
+      "byte_count": 1359,
+      "sha256": "1a43d07a3ee760bc55e64b9065857410b813b380a77f55d1ae7b84df2df0f440"
+    },
+    {
+      "path": "README.md",
+      "byte_count": 6223,
+      "sha256": "ca0f0461743c465fe09eae7aac85d1c891eb1019d322f36b730a373e8097d5df"
+    },
+    {
+      "path": "schemas/advisory-decision.schema.json",
+      "byte_count": 5154,
+      "sha256": "021595f25e62e43ab1ab39c44ef359e8a4b87d800cf7dacd2a2f24e12ce1b03f"
+    },
+    {
+      "path": "schemas/advisory-request.schema.json",
+      "byte_count": 1849,
+      "sha256": "d705c9ddae2a979e55c45dae86725ad96b7838cc3b460f58067e046b3a3ef7b0"
+    },
+    {
+      "path": "schemas/capability-profile.schema.json",
+      "byte_count": 1378,
+      "sha256": "d7eccd2580e9cd46a7f7a96c7d5a5c9e23860b93d714b14afa4417b8454b2a56"
+    },
+    {
+      "path": "schemas/governed/router-assessment.schema.json",
+      "byte_count": 9468,
+      "sha256": "b90596ee16c6a97af80e0fc4afc2783bf3ba46d3d87838e72a0cc749e1111aec"
+    },
+    {
+      "path": "schemas/governed/router-decision.schema.json",
+      "byte_count": 7733,
+      "sha256": "a3d04d1fc12fba10e91d77acdf8977d780c326b713c24ed9ad35bbf41324f73d"
+    },
+    {
+      "path": "schemas/governed/task-envelope.schema.json",
+      "byte_count": 4512,
+      "sha256": "14ed047d74a9423d5da61a2a38fc0bc285b507e4555af9602841ebd2ab691482"
+    },
+    {
+      "path": "schemas/policy.schema.json",
+      "byte_count": 3146,
+      "sha256": "4b6eb93de49440df31ce0afa9d3d09a050ad1b49cc5d3e590cfe4f0ee07e4f54"
+    },
+    {
+      "path": "SECURITY.md",
+      "byte_count": 844,
+      "sha256": "fbb55d6c496cd8ffbb912d76ff1140aaed6b4fca56922a02411747921685501f"
+    },
+    {
+      "path": "src/model_tier_router/__init__.py",
+      "byte_count": 703,
+      "sha256": "e329a602c40eb553784974ecdfe7bdf209279825c7aad633000094b31c298f7c"
+    },
+    {
+      "path": "src/model_tier_router/api.py",
+      "byte_count": 1368,
+      "sha256": "4044696f555fc3e149f692c9ee2e61d389595447a3d17836e38e6e55cdb922ef"
+    },
+    {
+      "path": "src/model_tier_router/cli.py",
+      "byte_count": 2695,
+      "sha256": "7e336ab5ca80bc1fed601f61449e672babf15be4b78cabf040c9ccef6b5c5d13"
+    },
+    {
+      "path": "src/model_tier_router/compat/__init__.py",
+      "byte_count": 407,
+      "sha256": "a5d7ccf96e5b985026f0306acd476a092745db35c05527ccb5958ad8437a0059"
+    },
+    {
+      "path": "src/model_tier_router/compat/legacy.py",
+      "byte_count": 11464,
+      "sha256": "eb4b08e6fa6cf0260d75a0052c37ff830d9a0f3aca424157e6d243c6428c17a6"
+    },
+    {
+      "path": "src/model_tier_router/contracts/__init__.py",
+      "byte_count": 141,
+      "sha256": "c8c2b081b8695ef100e0f9c0aec75c18f87c3f50fe5e1431fc051da91a5c6f39"
+    },
+    {
+      "path": "src/model_tier_router/core/__init__.py",
+      "byte_count": 409,
+      "sha256": "dae1c87937747acc7cb787cf43d6b8221522bae731d684888ba025429fe6125b"
+    },
+    {
+      "path": "src/model_tier_router/core/decision.py",
+      "byte_count": 13885,
+      "sha256": "837af8042df100b89a77f6fe977c96dc7535f82845f64dcf659fdcbff93e4de4"
+    },
+    {
+      "path": "src/model_tier_router/core/policy.py",
+      "byte_count": 6688,
+      "sha256": "ca8bb523202bb16f40c3adbdb2554342b53ca97971627eef1647b9269e0b66c8"
+    },
+    {
+      "path": "src/model_tier_router/core/profiles.py",
+      "byte_count": 4296,
+      "sha256": "2aaef6ccbdabdd6e9908fb52e850b21138790dd1779bc9ad6f5aa0c64d290757"
+    },
+    {
+      "path": "src/model_tier_router/governed/__init__.py",
+      "byte_count": 379,
+      "sha256": "c7761cbc04c08b05614ed816615f36168a6d0485b9396fd0bb2536bcc9ae1d95"
+    },
+    {
+      "path": "src/model_tier_router/governed/contracts.py",
+      "byte_count": 1860,
+      "sha256": "c17ae9fa3d4958f3cd58bf5895222ac3c5474b334ca67be6181f30c9fc405304"
+    },
+    {
+      "path": "src/model_tier_router/governed/router.py",
+      "byte_count": 10524,
+      "sha256": "b978be0f0c33a8179fed2645f64c8bb7ce7e163560f9a3436117cafa266f90eb"
+    },
+    {
+      "path": "src/model_tier_router/router.py",
+      "byte_count": 488,
+      "sha256": "5c4dc8f8a533d572ad62bd896124d7271313070de75ba3b7c415fc8237f24355"
+    },
+    {
+      "path": "src/model_tier_router/schema_validation.py",
+      "byte_count": 13702,
+      "sha256": "d0eaef8b27818799969ddfc6ee2dbc100314fe716fe60e6474ee6b597ba7ceb8"
+    },
+    {
+      "path": "src/model_tier_router/strict_json.py",
+      "byte_count": 3834,
+      "sha256": "39a41355b98804d62e40a242b6890d7ba873efbab618a09ad5490af1f0ec0625"
+    },
+    {
+      "path": "tests/core/__init__.py",
+      "byte_count": 18,
+      "sha256": "2a53dcfb4a8ac1d3633992c3e7a45a175c6e659c295ed410c0d5a886636c3408"
+    },
+    {
+      "path": "tests/core/test_advisory_core.py",
+      "byte_count": 10466,
+      "sha256": "4cce7b363194af2d1c47e4fde5cc2b26f0523e4aff09ce4b8acfc0bbcdaedd25"
+    },
+    {
+      "path": "tests/governed/__init__.py",
+      "byte_count": 36,
+      "sha256": "1b699d242189ae02f8ce78ee91d28a38cd73c3adb5ecdf3ae7a7bd9f9f3f9968"
+    },
+    {
+      "path": "tests/governed/test_governed_compatibility.py",
+      "byte_count": 8987,
+      "sha256": "ced93fac1060a9e7314fd33fcb24ea8a885c1122f2a806247747042fd3d09636"
+    },
+    {
+      "path": "tests/integrations/__init__.py",
+      "byte_count": 25,
+      "sha256": "ac685699a0c0a25fde518d92fd2f8d17c97948008060c87a9e33828cba1092f4"
+    },
+    {
+      "path": "tests/integrations/test_cli_and_public_surface.py",
+      "byte_count": 8657,
+      "sha256": "f67c47d6937fca65a276db08edd05cc8c13055da5884c51584d6dce0a2976ef5"
+    }
+  ]
+}

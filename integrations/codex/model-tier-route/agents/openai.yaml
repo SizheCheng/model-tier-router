@@ -1,0 +1,8 @@
+interface:
+  display_name: "Model Tier Route"
+  short_description: "Recommend a logical capability profile"
+  default_prompt: "Use $model-tier-route to produce one advisory capability-profile decision for this request."
+dependencies:
+  tools: []
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://model-tier-router.invalid/advisory-decision.schema.json",
+  "title": "Advisory Decision v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "decision_id", "status", "selected_profile",
+    "initial_profile", "maximum_profile", "constraints", "preferences",
+    "evidence", "escalation", "trace", "policy", "execution_authorized",
+    "authorized_write_scope"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "model_tier_router_advisory_decision_v1alpha1"},
+    "decision_id": {"type": "string", "pattern": "^decision_[0-9a-f]{64}$"},
+    "status": {
+      "type": "string",
+      "enum": ["recommended", "needs_input", "policy_blocked", "invalid_request", "integration_failure"]
+    },
+    "selected_profile": {"type": ["string", "null"]},
+    "initial_profile": {"type": ["string", "null"]},
+    "maximum_profile": {"type": ["string", "null"]},
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "profile_id", "field", "operator", "result"],
+        "properties": {
+          "rule_id": {"type": "string", "minLength": 1},
+          "profile_id": {"type": "string", "minLength": 1},
+          "field": {"type": "string", "minLength": 1},
+          "operator": {"type": "string", "minLength": 1},
+          "result": {"type": "string", "enum": ["pass", "reject"]}
+        }
+      }
+    },
+    "preferences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["profile_id", "rank"],
+        "properties": {
+          "profile_id": {"type": "string", "minLength": 1},
+          "rank": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "observed", "missing", "completeness"],
+      "properties": {
+        "required": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "observed": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "missing": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "completeness": {"type": "string", "enum": ["complete", "incomplete"]}
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initial_profile", "maximum_profile", "maximum_attempts", "condition_codes", "requires_new_assessment"],
+      "properties": {
+        "initial_profile": {"type": ["string", "null"]},
+        "maximum_profile": {"type": ["string", "null"]},
+        "maximum_attempts": {"type": "integer", "minimum": 0, "maximum": 10},
+        "condition_codes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "requires_new_assessment": {"type": "boolean", "const": true}
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "matched_rule_ids", "constraint_results", "rejected_alternatives",
+        "missing_evidence", "evidence_completeness", "stable_tie_break",
+        "request_digest", "policy_digest", "profile_catalog_digest",
+        "decision_digest"
+      ],
+      "properties": {
+        "matched_rule_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "constraint_results": {"type": "array", "items": {"type": "object"}},
+        "rejected_alternatives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["profile_id", "rule_ids"],
+            "properties": {
+              "profile_id": {"type": "string"},
+              "rule_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+            }
+          }
+        },
+        "missing_evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "evidence_completeness": {"type": "string", "enum": ["complete", "incomplete"]},
+        "stable_tie_break": {"type": "string", "const": "preference_tuple_then_profile_id"},
+        "request_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "policy_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "profile_catalog_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "decision_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "error_code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"}
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_id", "schema_version", "policy_digest"],
+      "properties": {
+        "policy_id": {"type": "string"},
+        "schema_version": {"type": "string"},
+        "policy_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "execution_authorized": {"type": "boolean", "const": false},
+    "authorized_write_scope": {"type": "array", "maxItems": 0, "items": {"type": "string"}}
+  }
+}

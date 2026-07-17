@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/model-tier-router/task-envelope.schema.json",
+  "title": "Model Tier Router Task Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "model_tier_router_task_envelope_v1"
+    },
+    "task_id": {"type": "string", "minLength": 1},
+    "task_class": {
+      "type": "string",
+      "enum": [
+        "action_warrant",
+        "ambiguous_debugging",
+        "authority_boundary_design",
+        "bounded_source_change",
+        "bounded_source_test_change",
+        "capability_binding",
+        "capability_gateway",
+        "command_status_unknown",
+        "deploy",
+        "deterministic_smoke",
+        "focused_test_change",
+        "json_schema_validation",
+        "live_action",
+        "local_preview_tool",
+        "log_summary",
+        "manifest_validation",
+        "packet_summary",
+        "production_write",
+        "publish",
+        "read_only_extraction",
+        "release",
+        "schema_validation",
+        "security_boundary",
+        "simple_docs_manifest",
+        "source_test_change",
+        "validation_profile",
+        "validation_supervisor",
+        "windows_process_temp_path_failure",
+        "write_boundary_issue"
+      ]
+    },
+    "risk_class": {
+      "type": "string",
+      "enum": ["fast", "controlled", "locked"]
+    },
+    "authority_boundary": {
+      "type": "string",
+      "enum": [
+        "action_warrant",
+        "approved_write",
+        "bounded_local_write",
+        "capability_binding",
+        "controlled_source_test_write",
+        "explicit_bounded_write",
+        "live_action",
+        "preview_only",
+        "production_write",
+        "read_only",
+        "release",
+        "validation_profile",
+        "validation_route"
+      ]
+    },
+    "uncertainty_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "unknown"]
+    },
+    "reversibility": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "mutation_scope": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*:)(?!.*//)(?!\\.{1,2}(?:/|$))(?!.*(?:/\\.{1,2})(?:/|$))(?!.*[\\\\*?\\[\\]{}])(?!.*[\\u0000-\\u001F\\u007F-\\u009F])[^/]+(?:/[^/]+)*$"
+      }
+    },
+    "validation_cost": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "expected_failure_cost": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "severe"]
+    },
+    "evidence_requirement": {"type": "string", "minLength": 1},
+    "command_status_risk": {
+      "type": "string",
+      "enum": ["known", "unknown"]
+    },
+    "security_or_secret_exposure_risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "full_suite_expected": {"type": "boolean"},
+    "human_approval_required": {"type": "boolean"},
+    "approval_reference": {"type": ["string", "null"]},
+    "validation_obligation": {
+      "type": "string",
+      "enum": ["not_required", "conditional", "conditional_supervised", "required"]
+    },
+    "governed_mode": {"type": "boolean"},
+    "direct_model_override": {"type": ["string", "null"]},
+    "budget_class": {
+      "description": "Optional caller maximum; the final budget class is computed internally.",
+      "type": "string",
+      "enum": ["small", "normal", "elevated", "locked"]
+    },
+    "authority_receipt_id": {"type": "string", "minLength": 1},
+    "sample": {
+      "type": "string",
+      "enum": [
+        "read_only_packet_summary",
+        "simple_docs_manifest",
+        "bounded_source_test_change",
+        "ambiguous_command_status_unknown",
+        "validation_supervisor_task",
+        "live_deploy_capability_binding"
+      ]
+    }
+  },
+  "if": {"required": ["sample"]},
+  "then": {},
+  "else": {
+    "required": [
+      "task_class",
+      "risk_class",
+      "authority_boundary",
+      "uncertainty_level",
+      "reversibility",
+      "mutation_scope",
+      "validation_cost",
+      "expected_failure_cost",
+      "evidence_requirement",
+      "command_status_risk",
+      "security_or_secret_exposure_risk",
+      "full_suite_expected",
+      "human_approval_required",
+      "approval_reference",
+      "validation_obligation",
+      "governed_mode",
+      "direct_model_override",
+      "authority_receipt_id"
+    ]
+  }
+}

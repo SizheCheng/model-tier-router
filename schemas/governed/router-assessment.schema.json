@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/model-tier-router/router-assessment.schema.json",
+  "title": "Model Tier Router Advisory Assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "advisory_only",
+    "execution_authorized",
+    "write_allowed",
+    "task_class",
+    "risk_class",
+    "model_tier",
+    "reasoning_budget",
+    "proposed_mutation_scope",
+    "authorized_write_scope",
+    "budget_class",
+    "approval_obligation",
+    "validation_obligation",
+    "unmet_verifier_obligations",
+    "fail_closed",
+    "provider_or_model_call_count",
+    "network_request_count"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "model_tier_router_assessment_v1"
+    },
+    "artifact_type": {
+      "type": "string",
+      "const": "model_tier_router_advisory_assessment"
+    },
+    "advisory_only": {"type": "boolean", "const": true},
+    "execution_authorized": {"type": "boolean", "const": false},
+    "write_allowed": {"type": "boolean", "const": false},
+    "task_class": {
+      "type": "string",
+      "enum": [
+        "action_warrant",
+        "ambiguous_debugging",
+        "authority_boundary_design",
+        "bounded_source_change",
+        "bounded_source_test_change",
+        "capability_binding",
+        "capability_gateway",
+        "command_status_unknown",
+        "deploy",
+        "deterministic_smoke",
+        "focused_test_change",
+        "json_schema_validation",
+        "live_action",
+        "local_preview_tool",
+        "log_summary",
+        "manifest_validation",
+        "packet_summary",
+        "production_write",
+        "publish",
+        "read_only_extraction",
+        "release",
+        "schema_validation",
+        "security_boundary",
+        "simple_docs_manifest",
+        "source_test_change",
+        "unknown",
+        "validation_profile",
+        "validation_supervisor",
+        "windows_process_temp_path_failure",
+        "write_boundary_issue"
+      ]
+    },
+    "risk_class": {
+      "type": "string",
+      "enum": ["fast", "controlled", "locked", "unknown"]
+    },
+    "model_tier": {
+      "type": "string",
+      "enum": ["cheap", "medium", "expensive"]
+    },
+    "reasoning_budget": {
+      "type": "string",
+      "enum": ["minimal", "low", "medium", "high", "xhigh"]
+    },
+    "proposed_mutation_scope": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*:)(?!.*//)(?!\\.{1,2}(?:/|$))(?!.*(?:/\\.{1,2})(?:/|$))(?!.*[\\\\*?\\[\\]{}])(?!.*[\\u0000-\\u001F\\u007F-\\u009F\\uD800-\\uDFFF])[^/]+(?:/[^/]+)*$"
+      }
+    },
+    "authorized_write_scope": {
+      "type": "array",
+      "maxItems": 0,
+      "items": {"type": "string"}
+    },
+    "budget_class": {
+      "type": "string",
+      "enum": ["small", "normal", "elevated", "locked"]
+    },
+    "approval_obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewer_required", "human_required"],
+      "properties": {
+        "reviewer_required": {"type": "boolean"},
+        "human_required": {"type": "boolean"}
+      }
+    },
+    "validation_obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligation", "supervised_full_suite_required"],
+      "properties": {
+        "obligation": {
+          "type": "string",
+          "enum": [
+            "not_required",
+            "conditional",
+            "conditional_supervised",
+            "required"
+          ]
+        },
+        "supervised_full_suite_required": {"type": "boolean"}
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "obligation": {"const": "not_required"},
+            "supervised_full_suite_required": {"const": false}
+          }
+        },
+        {"properties": {"obligation": {"const": "conditional"}}},
+        {
+          "properties": {
+            "obligation": {"const": "conditional_supervised"},
+            "supervised_full_suite_required": {"const": true}
+          }
+        },
+        {
+          "properties": {
+            "obligation": {"const": "required"},
+            "supervised_full_suite_required": {"const": true}
+          }
+        }
+      ]
+    },
+    "unmet_verifier_obligations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "approval",
+          "validation",
+          "canonical_route",
+          "authority_receipt"
+        ]
+      },
+      "enum": [
+        ["canonical_route", "authority_receipt"],
+        ["approval", "canonical_route", "authority_receipt"],
+        ["validation", "canonical_route", "authority_receipt"],
+        ["approval", "validation", "canonical_route", "authority_receipt"]
+      ]
+    },
+    "fail_closed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "code"],
+      "properties": {
+        "status": {"type": "string", "enum": ["clear", "hard_stop"]},
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*(?::[A-Za-z0-9_.-]+)?$"
+        }
+      }
+    },
+    "provider_or_model_call_count": {"type": "integer", "const": 0},
+    "network_request_count": {"type": "integer", "const": 0}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "fail_closed": {"properties": {"status": {"const": "clear"}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "fail_closed": {
+            "properties": {"code": {"const": "ADVISORY_ONLY"}}
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "fail_closed": {
+            "properties": {
+              "code": {"not": {"enum": ["ADVISORY_ONLY", "OK"]}}
+            }
+          },
+          "model_tier": {"const": "expensive"},
+          "reasoning_budget": {"const": "xhigh"},
+          "proposed_mutation_scope": {"maxItems": 0},
+          "budget_class": {"const": "locked"},
+          "approval_obligation": {
+            "properties": {
+              "reviewer_required": {"const": true},
+              "human_required": {"const": true}
+            }
+          },
+          "validation_obligation": {
+            "properties": {
+              "obligation": {"const": "required"},
+              "supervised_full_suite_required": {"const": true}
+            }
+          },
+          "unmet_verifier_obligations": {
+            "const": [
+              "approval",
+              "validation",
+              "canonical_route",
+              "authority_receipt"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "model_tier": {"const": "cheap"},
+            "reasoning_budget": {"enum": ["minimal", "low"]},
+            "budget_class": {"const": "small"}
+          }
+        },
+        {
+          "properties": {
+            "model_tier": {"const": "medium"},
+            "reasoning_budget": {"const": "medium"},
+            "budget_class": {"const": "normal"}
+          }
+        },
+        {
+          "properties": {
+            "model_tier": {"const": "expensive"},
+            "reasoning_budget": {"const": "high"},
+            "budget_class": {"const": "elevated"}
+          }
+        },
+        {
+          "properties": {
+            "model_tier": {"const": "expensive"},
+            "reasoning_budget": {"const": "xhigh"},
+            "budget_class": {"const": "locked"}
+          }
+        }
+      ]
+    },
+    {
+      "if": {
+        "properties": {
+          "approval_obligation": {
+            "anyOf": [
+              {"properties": {"reviewer_required": {"const": true}}},
+              {"properties": {"human_required": {"const": true}}}
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "unmet_verifier_obligations": {
+            "enum": [
+              ["approval", "canonical_route", "authority_receipt"],
+              [
+                "approval",
+                "validation",
+                "canonical_route",
+                "authority_receipt"
+              ]
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "unmet_verifier_obligations": {
+            "enum": [
+              ["canonical_route", "authority_receipt"],
+              ["validation", "canonical_route", "authority_receipt"]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "validation_obligation": {
+            "properties": {
+              "obligation": {"const": "not_required"},
+              "supervised_full_suite_required": {"const": false}
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "unmet_verifier_obligations": {
+            "enum": [
+              ["canonical_route", "authority_receipt"],
+              ["approval", "canonical_route", "authority_receipt"]
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "unmet_verifier_obligations": {
+            "enum": [
+              ["validation", "canonical_route", "authority_receipt"],
+              [
+                "approval",
+                "validation",
+                "canonical_route",
+                "authority_receipt"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
