@@ -1,0 +1,29 @@
+metric,value
+schema_version,"""1.0.0"""
+target_repositories_attempted,4
+real_tasks_executed,1
+real_model_executions,2
+target_repositories_with_real_model_run,1
+router_non_execution_decisions,0
+first_pass_validator_success_rate,0.5
+escalation_count,0
+escalation_rate,0.0
+final_validator_success_rate,0.5
+model_distribution,"{""gpt-5.6-sol"": 1, ""gpt-5.6-terra"": 1}"
+usage_totals,"{""cached_input_tokens"": 1548288, ""input_tokens"": 1673298, ""output_tokens"": 24427, ""reasoning_output_tokens"": 7456}"
+observed_wall_time_seconds,503.288
+wall_time_measurement_quality,"""CONTAMINATED_BY_CONCURRENT_CODEX_SESSIONS"""
+rate_limit_events,0
+model_unavailable_events,0
+changed_path_count,2
+changed_path_summaries,"[{""case_id"": ""mtr-docs-private-executor-r1"", ""changed_paths"": [""docs/dogfood-automation.md"", ""tests/integrations/test_dogfood_automation.py""], ""diff_sha256"": ""9c7080dec039b6c5d0f73230f7c45c69758ac01d1485d1ebe485b7ef011c109c"", ""experiment_arm"": ""FIXED_PREMIUM_CONTROL""}, {""case_id"": ""mtr-docs-private-executor-r1"", ""changed_paths"": [], ""diff_sha256"": ""e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"", ""experiment_arm"": ""ROUTER_AUTO""}]"
+commits_created,1
+auto_merges,0
+branches_retained,1
+retained_branches,"[""mtr-dogfood/mtr-docs-private-executor-r1/fixed_premium_control-1""]"
+under_routing_observations,1
+control_pair,"{""case_id"": ""mtr-docs-private-executor-r1"", ""causal_latency_claim"": false, ""fixed_premium_control_validated"": true, ""observed_wall_time_difference_seconds_router_minus_control"": -273.124, ""router_auto_validated"": false, ""status"": ""COMPLETE_VALIDATION_DIVERGED"", ""token_difference_router_minus_control"": {""cached_input_tokens"": -1056768, ""input_tokens"": -1096938, ""output_tokens"": -14285, ""reasoning_output_tokens"": -5640}, ""validation_result_difference"": true, ""wall_time_label"": ""OBSERVED_ONLY_CONCURRENCY_CONTAMINATED""}"
+infrastructure_failure_summary,"{""host_policy_blocks_before_child_start"": 1, ""pre_model_validator_defect_child_invocations"": 6, ""router_quality_failure_count"": 1, ""runner_launch_failures_before_child_start"": 1}"
+cost_usd,null
+wall_time_comparison_label,"""OBSERVED_ONLY_CONCURRENCY_CONTAMINATED"""
+summer_project_summary,"""A private local harness automated advisory Router decisions, actual Codex model selection, isolated worktrees, frozen validation, sanitized usage receipts and local-only Git commits. The fixed-premium control produced one validated model-tier-router review commit; the Router arm produced no change, and the qwen-redaction model run was blocked by host data-transfer policy before startup. Concurrent Codex activity contaminates wall-time observations, and retained work still requires human acceptance."""

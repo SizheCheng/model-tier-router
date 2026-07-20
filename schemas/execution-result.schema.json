@@ -1,6 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Dogfood child final result",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -14,11 +12,11 @@
     "notes"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "case_id": {"type": "string", "minLength": 1},
-    "status": {"enum": ["completed", "blocked", "failed"]},
+    "schema_version": {"type": "string", "enum": ["1.0.0"]},
+    "case_id": {"type": "string"},
+    "status": {"type": "string", "enum": ["completed", "blocked", "failed"]},
     "summary": {"type": "string"},
-    "changed_paths": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "changed_paths": {"type": "array", "items": {"type": "string"}},
     "tests_run": {
       "type": "array",
       "items": {
@@ -27,7 +25,7 @@
         "required": ["command", "status"],
         "properties": {
           "command": {"type": "string"},
-          "status": {"enum": ["passed", "failed", "not_run"]}
+          "status": {"type": "string", "enum": ["passed", "failed", "not_run"]}
         }
       }
     },

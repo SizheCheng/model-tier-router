@@ -91,7 +91,17 @@ def create_worktree(
     if target.exists():
         raise GitContractError("worktree path already exists")
     target.parent.mkdir(parents=True, exist_ok=True)
-    _git(repository, "worktree", "add", "-b", branch, str(target), baseline)
+    branch_ref = f"refs/heads/{branch}"
+    existing = _git(
+        repository, "show-ref", "--verify", "--quiet", branch_ref, check=False
+    )
+    if existing.returncode == 0:
+        branch_head = _git(repository, "rev-parse", branch_ref).stdout.strip()
+        if branch_head != baseline:
+            raise GitContractError("existing attempt branch is not at the baseline")
+        _git(repository, "worktree", "add", str(target), branch)
+    else:
+        _git(repository, "worktree", "add", "-b", branch, str(target), baseline)
     if _git(target, "rev-parse", "HEAD").stdout.strip() != baseline:
         raise GitContractError("worktree baseline mismatch")
     return target

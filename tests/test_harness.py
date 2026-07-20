@@ -10,7 +10,9 @@ from mtr_dogfood.codex_runner import (
     build_command,
     classify_infrastructure,
     extract_usage,
+    resolve_codex_executable,
 )
+from mtr_dogfood.cli import _forbidden_action_detected
 from mtr_dogfood.concurrency import measurement_quality, sanitize_process_rows
 from mtr_dogfood.config import (
     ContractError,
@@ -60,6 +62,63 @@ class JsonContractTests(unittest.TestCase):
             (ROOT / "schemas").glob("*.json")
         ):
             self.assertIsNotNone(load_json(path), path)
+
+    def test_codex_output_schema_types_all_const_and_enum_fields(self):
+        schema = load_json(ROOT / "schemas" / "execution-result.schema.json")
+        def walk(value):
+            if isinstance(value, dict):
+                if "const" in value or "enum" in value:
+                    self.assertIn("type", value)
+                for child in value.values():
+                    walk(child)
+            elif isinstance(value, list):
+                for child in value:
+                    walk(child)
+        walk(schema)
+
+    def test_codex_output_schema_uses_supported_strict_subset(self):
+        schema = load_json(ROOT / "schemas" / "execution-result.schema.json")
+        encoded = json.dumps(schema, sort_keys=True)
+        for forbidden in ('"$schema"', '"const"', '"minLength"', '"uniqueItems"'):
+            self.assertNotIn(forbidden, encoded)
+
+
+class EvidenceClassificationTests(unittest.TestCase):
+    def test_non_error_event_does_not_trigger_infrastructure_pattern(self):
+        events = json.dumps(
+            {"type": "turn.completed", "message": "model unavailable in task text"}
+        )
+        self.assertIsNone(classify_infrastructure(events, "")["infrastructure_failure_class"])
+
+    def test_structured_error_event_is_classified(self):
+        events = json.dumps({"type": "error", "message": "model not found"})
+        result = classify_infrastructure(events, "")
+        self.assertEqual(result["infrastructure_failure_class"], "MODEL_UNAVAILABLE")
+
+    def test_forbidden_scan_reads_command_field_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "message": "do not run git commit",
+                        "item": {"type": "command_execution", "command": "python -m pytest"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertFalse(_forbidden_action_detected(path))
+            path.write_text(
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {"type": "command_execution", "command": "git commit -m bad"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertTrue(_forbidden_action_detected(path))
 
 
 class PathPolicyTests(unittest.TestCase):
@@ -189,8 +248,16 @@ class CodexRunnerTests(unittest.TestCase):
             "MODEL_UNAVAILABLE",
         )
 
+    def test_invalid_output_schema_is_validator_defect(self):
+        self.assertEqual(
+            classify_infrastructure("invalid_json_schema", "")["infrastructure_failure_class"],
+            "VALIDATOR_DEFECT",
+        )
+
     def test_command_enforces_no_approval_and_workspace_sandbox(self):
         command = build_command(ROOT, "model", "low", ROOT / "schema", ROOT / "out")
+        self.assertEqual(Path(command[0]).suffix.lower(), ".exe")
+        self.assertTrue(Path(resolve_codex_executable()).is_file())
         self.assertIn('approval_policy="never"', command)
         self.assertIn("workspace-write", command)
         self.assertIn("--strict-config", command)
@@ -282,6 +349,9 @@ class WorktreeTests(unittest.TestCase):
         self.assertTrue(worktree.exists())
         remove_worktree(self.repo, self.pool, worktree)
         self.assertFalse(worktree.exists())
+        create_worktree(self.repo, self.pool, worktree, "mtr-dogfood/test", self.head)
+        self.assertTrue(worktree.exists())
+        remove_worktree(self.repo, self.pool, worktree)
 
     def test_commit_and_fast_forward_conditions(self):
         worktree = self.pool / "repo" / "case" / "router_auto-1"

@@ -1,0 +1,1 @@
+{"command":"python -B -m unittest discover -s tests -v","duration_seconds":20.998,"failed":0,"log_sha256":"3e558273e40b59b0a5e5aacb6f9ac363502969a966f96a5904f6f3aaa83caab8","passed":37,"result":"PASS","schema_version":"1.0.0"}

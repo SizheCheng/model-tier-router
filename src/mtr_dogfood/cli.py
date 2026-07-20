@@ -179,10 +179,14 @@ def _forbidden_action_detected(events_path: Path) -> bool:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        text = json.dumps(event, ensure_ascii=False)
-        if '"type": "command_execution"' in text or '"item.type": "command_execution"' in text:
-            if FORBIDDEN_ACTION_RE.search(text):
-                return True
+        command = None
+        item = event.get("item")
+        if isinstance(item, dict) and item.get("type") == "command_execution":
+            command = item.get("command")
+        elif event.get("type") == "command_execution":
+            command = event.get("command")
+        if isinstance(command, str) and FORBIDDEN_ACTION_RE.search(command):
+            return True
     return False
 
 
@@ -199,6 +203,7 @@ def execute_case(case: dict[str, Any], arm: str, *, defer_merge: bool) -> dict[s
     receipt_dir.mkdir(parents=True, exist_ok=True)
     raw_dir.mkdir(parents=True, exist_ok=True)
     run_temp.mkdir(parents=True, exist_ok=True)
+    (run_temp / "validation" / "atomic").mkdir(parents=True, exist_ok=True)
     worktree = (
         Path(settings["worktree_pool"])
         / case["repository"]

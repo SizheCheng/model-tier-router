@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -14,6 +15,35 @@ MODEL_UNAVAILABLE_PATTERNS = re.compile(
     r"model unavailable|model not found|temporarily unavailable", re.I
 )
 AUTH_PATTERNS = re.compile(r"not authenticated|invalid token|login required", re.I)
+SCHEMA_PATTERNS = re.compile(r"invalid_json_schema|invalid schema for response_format", re.I)
+
+
+def resolve_codex_executable() -> str:
+    override = os.environ.get("MTR_DOGFOOD_CODEX_EXE")
+    if override and Path(override).is_file():
+        return str(Path(override).resolve())
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        native = (
+            Path(appdata)
+            / "npm"
+            / "node_modules"
+            / "@openai"
+            / "codex"
+            / "node_modules"
+            / "@openai"
+            / "codex-win32-x64"
+            / "vendor"
+            / "x86_64-pc-windows-msvc"
+            / "bin"
+            / "codex.exe"
+        )
+        if native.is_file():
+            return str(native.resolve())
+    discovered = shutil.which("codex")
+    if discovered and Path(discovered).suffix.lower() == ".exe":
+        return str(Path(discovered).resolve())
+    raise FileNotFoundError("native codex executable was not found")
 
 
 def build_command(
@@ -24,7 +54,7 @@ def build_command(
     output_file: str | Path,
 ) -> list[str]:
     return [
-        "codex",
+        resolve_codex_executable(),
         "exec",
         "-C",
         str(Path(worktree).resolve()),
@@ -90,10 +120,28 @@ def extract_usage(lines: Iterable[str]) -> dict[str, int | None]:
 
 
 def classify_infrastructure(events: str, stderr: str) -> dict[str, int | str | None]:
-    combined = f"{events}\n{stderr}"
+    structured_errors: list[str] = []
+    parsed_event = False
+    for line in events.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        parsed_event = True
+        if event.get("type") in {"error", "turn.failed"}:
+            structured_errors.append(json.dumps(event, ensure_ascii=False))
+    if structured_errors:
+        combined = f"{' '.join(structured_errors)}\n{stderr}"
+    elif parsed_event:
+        # Successful structured event payloads can echo task text containing
+        # infrastructure vocabulary. Only stderr is a fallback error channel.
+        combined = stderr
+    else:
+        combined = f"{events}\n{stderr}"
     rate = len(RATE_LIMIT_PATTERNS.findall(combined))
     unavailable = len(MODEL_UNAVAILABLE_PATTERNS.findall(combined))
     auth = len(AUTH_PATTERNS.findall(combined))
+    schema = len(SCHEMA_PATTERNS.findall(combined))
     failure = None
     if rate:
         failure = "RATE_LIMIT"
@@ -101,10 +149,13 @@ def classify_infrastructure(events: str, stderr: str) -> dict[str, int | str | N
         failure = "MODEL_UNAVAILABLE"
     elif auth:
         failure = "AUTHENTICATION_FAILURE"
+    elif schema:
+        failure = "VALIDATOR_DEFECT"
     return {
         "rate_limit_event_count": rate,
         "model_unavailable_event_count": unavailable,
         "authentication_event_count": auth,
+        "output_schema_error_count": schema,
         "infrastructure_failure_class": failure,
     }
 

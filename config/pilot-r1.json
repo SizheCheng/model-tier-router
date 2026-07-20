@@ -3,5 +3,185 @@
   "route_id": "MODEL_TIER_ROUTER_CROSS_PRODUCT_AUTOMATED_DOGFOOD_R1_CONCURRENT_SAFE",
   "maximum_child_codex_exec_invocations": 9,
   "maximum_escalations_per_router_arm": 1,
-  "cases": []
+  "selection_results": {
+    "canonical-memories": "NO_ELIGIBLE_TASK",
+    "shortage-B": "NO_ELIGIBLE_TASK"
+  },
+  "cases": [
+    {
+      "case_id": "mtr-docs-private-executor-r1",
+      "repository": "model-tier-router",
+      "baseline_head": "a455debff9a01faa5481cb8a6ca98e31e29ec52a",
+      "title": "document advisory private executor integration",
+      "task_text": "Add docs/dogfood-automation.md and tests/integrations/test_dogfood_automation.py. The guide and non-executing integration test must demonstrate a private executor consuming an advisory assess result while preserving execution_authorized=false and authorized_write_scope=[], requiring status=recommended, and treating the selected logical profile as a recommendation that is mapped and executed only under separate current user authority. Do not add provider calls, model names, network access, execution dispatch, or production behavior changes.",
+      "changed_path_patterns": [
+        "docs/dogfood-automation.md",
+        "tests/integrations/test_dogfood_automation.py"
+      ],
+      "risk": "LOW_RISK",
+      "change_class": "documentation",
+      "useful_independent_of_experiment": true,
+      "requires_confidential_payload": false,
+      "requires_network": false,
+      "requires_other_repository": false,
+      "model_timeout_seconds": 1200,
+      "arms": [
+        "ROUTER_AUTO",
+        "FIXED_PREMIUM_CONTROL"
+      ],
+      "router_request": {
+        "schema_version": "model_tier_router_advisory_request_v1alpha1",
+        "request_id": "mtr-docs-private-executor-r1",
+        "requirements": {
+          "modalities": ["text"],
+          "tool_support": true,
+          "maximum_cost_class": "medium"
+        },
+        "preferences": ["higher_reasoning"],
+        "evidence": {
+          "modalities": true,
+          "tool_support": true
+        }
+      },
+      "validator_plan": {
+        "commands": [
+          {
+            "name": "focused-dogfood-integration",
+            "layer": "focused",
+            "command": [
+              "python",
+              "-B",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests/integrations",
+              "-p",
+              "test_dogfood_automation.py",
+              "-v"
+            ],
+            "pythonpath_src": true,
+            "timeout_seconds": 120
+          },
+          {
+            "name": "full-unittest",
+            "layer": "full",
+            "command": [
+              "python",
+              "-B",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests",
+              "-v"
+            ],
+            "pythonpath_src": true,
+            "timeout_seconds": 300
+          },
+          {
+            "name": "guide-contract",
+            "layer": "artifact",
+            "command": [
+              "python",
+              "-B",
+              "-c",
+              "from pathlib import Path; p=Path('docs/dogfood-automation.md'); t=p.read_text(encoding='utf-8'); assert 'execution_authorized' in t; assert 'authorized_write_scope' in t; assert 'separate' in t.lower() and 'authority' in t.lower()"
+            ],
+            "timeout_seconds": 60
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "qwen-docx-hidden-elements-r1",
+      "repository": "qwen-redaction-standalone",
+      "baseline_head": "bbb1bd68882aeb735f29c448b00a5c21783b355f",
+      "title": "cover hidden DOCX visibility elements",
+      "task_text": "Add the smallest synthetic regression in tests/redaction/test_docx_package.py for the previously untested WordprocessingML hidden visibility elements w:vanish and w:webHidden. Prove both synthetic elements are rejected with UnsupportedDocxFeatureError and that no synthetic sensitive value is echoed. Change tests only; preserve every production and safety boundary.",
+      "changed_path_patterns": [
+        "tests/redaction/test_docx_package.py"
+      ],
+      "risk": "MEDIUM_RISK",
+      "change_class": "tests",
+      "useful_independent_of_experiment": true,
+      "requires_confidential_payload": false,
+      "requires_network": false,
+      "requires_other_repository": false,
+      "model_timeout_seconds": 1200,
+      "arms": ["ROUTER_AUTO"],
+      "router_request": {
+        "schema_version": "model_tier_router_advisory_request_v1alpha1",
+        "request_id": "qwen-docx-hidden-elements-r1",
+        "requirements": {
+          "modalities": ["text"],
+          "tool_support": true,
+          "maximum_cost_class": "medium"
+        },
+        "preferences": ["higher_reasoning"],
+        "evidence": {
+          "modalities": true,
+          "tool_support": true
+        }
+      },
+      "validator_plan": {
+        "commands": [
+          {
+            "name": "focused-docx-package",
+            "layer": "focused",
+            "command": [
+              "python",
+              "-B",
+              "-m",
+              "pytest",
+              "-q",
+              "tests/redaction/test_docx_package.py",
+              "--basetemp",
+              "{run_temp}/pytest-focused"
+            ],
+            "env": {
+              "TEMP": "{run_temp}",
+              "TMP": "{run_temp}",
+              "QWEN_STAGE12LI_VALIDATION_ROOT": "{run_temp}/validation",
+              "QWEN_STAGE12LI_ATOMIC_TEMP_ROOT": "{run_temp}/validation/atomic"
+            },
+            "pythonpath_src": true,
+            "timeout_seconds": 300
+          },
+          {
+            "name": "full-pytest",
+            "layer": "full",
+            "command": [
+              "python",
+              "-B",
+              "-m",
+              "pytest",
+              "-q",
+              "--basetemp",
+              "{run_temp}/pytest-full"
+            ],
+            "env": {
+              "TEMP": "{run_temp}",
+              "TMP": "{run_temp}",
+              "QWEN_STAGE12LI_VALIDATION_ROOT": "{run_temp}/validation",
+              "QWEN_STAGE12LI_ATOMIC_TEMP_ROOT": "{run_temp}/validation/atomic"
+            },
+            "pythonpath_src": true,
+            "timeout_seconds": 900
+          },
+          {
+            "name": "hidden-element-regression-shape",
+            "layer": "artifact",
+            "command": [
+              "python",
+              "-B",
+              "-c",
+              "from pathlib import Path; t=Path('tests/redaction/test_docx_package.py').read_text(encoding='utf-8'); assert 'vanish' in t and 'webHidden' in t and 'UnsupportedDocxFeatureError' in t"
+            ],
+            "timeout_seconds": 60
+          }
+        ]
+      }
+    }
+  ]
 }
