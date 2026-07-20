@@ -1,0 +1,33 @@
+{
+  "schema_version": "2.0.0",
+  "route_id": "MODEL_TIER_ROUTER_DOGFOOD_R2_HARNESS_REPAIR_AND_TWO_LANE_REAL_RUNS",
+  "maximum_child_codex_exec_process_starts": 5,
+  "maximum_escalations_per_router_task": 1,
+  "source_router_request_config": "config/pilot-r1.json",
+  "source_router_request_config_sha256": "7e44e2175ae682af373df3550ccd5cc6fa0743bc76079d1d5a4e8287c83c09e7",
+  "existing_fixed_premium_control": {
+    "repository": "model-tier-router",
+    "branch": "mtr-dogfood/mtr-docs-private-executor-r1/fixed_premium_control-1",
+    "commit": "e544cb7ee7497aa7706a06ef4aa55bfcf18bcca1",
+    "baseline": "a455debff9a01faa5481cb8a6ca98e31e29ec52a",
+    "read_only": true,
+    "rerun": false,
+    "merge": false
+  },
+  "cases": [
+    {
+      "case_id": "mtr-docs-private-executor-r1",
+      "source_task_receipt": "runs/receipts/mtr-docs-private-executor-r1--router_auto/task.json",
+      "source_task_sha256": "ab0446be54ba29b4151c53c8f8cd8c156b021b0b9cd1189cde0206c6a1c55e7e",
+      "branch_prefix": "mtr-dogfood/mtr-docs-private-executor-r2/router_auto",
+      "automatic_fast_forward_merge": true
+    },
+    {
+      "case_id": "qwen-docx-hidden-elements-r1",
+      "source_task_receipt": "runs/receipts/qwen-docx-hidden-elements-r1--router_auto/task.json",
+      "source_task_sha256": "d4f289857977eeccd8b9327ae3565e83f9939a71510be08a71f56f98ca821b31",
+      "branch_prefix": "mtr-dogfood/qwen-docx-hidden-elements-r2/router_auto",
+      "automatic_fast_forward_merge": false
+    }
+  ]
+}

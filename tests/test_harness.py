@@ -10,6 +10,7 @@ from mtr_dogfood.codex_runner import (
     build_command,
     classify_infrastructure,
     extract_usage,
+    observe_model_execution,
     resolve_codex_executable,
 )
 from mtr_dogfood.cli import _forbidden_action_detected
@@ -31,6 +32,17 @@ from mtr_dogfood.git_worktrees import (
     repository_state,
 )
 from mtr_dogfood.receipts import sanitize, validate_required_fields, write_json
+from mtr_dogfood.r2_contract import (
+    InvocationBudget,
+    PayloadValidationError,
+    assert_control_action_allowed,
+    classify_attempt,
+    classify_child_claim,
+    validate_child_transport,
+    validate_codex_output_schema,
+    validate_r2_repository_scope,
+)
+from mtr_dogfood.r2_execution import _load_case
 from mtr_dogfood.router_adapter import (
     RouterDecisionError,
     map_profile,
@@ -81,6 +93,19 @@ class JsonContractTests(unittest.TestCase):
         encoded = json.dumps(schema, sort_keys=True)
         for forbidden in ('"$schema"', '"const"', '"minLength"', '"uniqueItems"'):
             self.assertNotIn(forbidden, encoded)
+
+    def test_invalid_internal_schema_is_rejected_before_process_start(self):
+        schema = load_json(ROOT / "schemas" / "execution-result.schema.json")
+        del schema["properties"]["status"]["type"]
+        budget = InvocationBudget()
+        with self.assertRaises(PayloadValidationError):
+            try:
+                validate_codex_output_schema(schema)
+            except PayloadValidationError:
+                budget.record_payload_rejection()
+                raise
+        self.assertEqual(budget.process_starts, 0)
+        self.assertEqual(budget.pre_model_payload_rejections, 1)
 
 
 class EvidenceClassificationTests(unittest.TestCase):
@@ -254,13 +279,90 @@ class CodexRunnerTests(unittest.TestCase):
             "VALIDATOR_DEFECT",
         )
 
+    def test_read_only_sandbox_is_host_policy_failure(self):
+        result = classify_infrastructure(
+            "",
+            "patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings",
+        )
+        self.assertEqual(
+            result["infrastructure_failure_class"],
+            "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS",
+        )
+
     def test_command_enforces_no_approval_and_workspace_sandbox(self):
-        command = build_command(ROOT, "model", "low", ROOT / "schema", ROOT / "out")
+        command = build_command(
+            ROOT,
+            "model",
+            "low",
+            ROOT / "schema",
+            ROOT / "out",
+        )
         self.assertEqual(Path(command[0]).suffix.lower(), ".exe")
         self.assertTrue(Path(resolve_codex_executable()).is_file())
         self.assertIn('approval_policy="never"', command)
         self.assertIn("workspace-write", command)
         self.assertIn("--strict-config", command)
+        self.assertIn("--ignore-user-config", command)
+        self.assertIn('web_search="disabled"', command)
+        self.assertIn("sandbox_workspace_write.network_access=false", command)
+        self.assertNotIn("--add-dir", command)
+
+    def test_model_observation_excludes_schema_rejection(self):
+        rejected = [
+            json.dumps({"type": "thread.started"}),
+            json.dumps({"type": "turn.started"}),
+            json.dumps({"type": "error", "message": "invalid_json_schema"}),
+        ]
+        self.assertEqual(observe_model_execution(rejected), (False, False))
+        completed = [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "done"},
+                }
+            ),
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 1}}),
+        ]
+        self.assertEqual(observe_model_execution(completed), (True, True))
+
+    def test_worktree_local_schema_and_host_policy_transport(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worktree = Path(directory) / "worktree"
+            metadata = worktree / ".mtr-dogfood-r2"
+            metadata.mkdir(parents=True)
+            schema = metadata / "schema.json"
+            output = metadata / "result.json"
+            schema.write_text("{}", encoding="utf-8")
+            command = build_command(worktree, "model", "low", schema, output)
+            prompt = f"Work only in {worktree}"
+            validate_child_transport(
+                worktree,
+                command,
+                prompt,
+                [Path(directory) / "harness", Path(directory) / "other-repository"],
+            )
+            self.assertTrue(
+                Path(command[command.index("--output-schema") + 1]).is_relative_to(
+                    worktree
+                )
+            )
+
+    def test_external_repository_path_is_rejected_before_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worktree = Path(directory) / "worktree"
+            metadata = worktree / ".mtr-dogfood-r2"
+            metadata.mkdir(parents=True)
+            schema = metadata / "schema.json"
+            output = metadata / "result.json"
+            other = Path(directory) / "other"
+            command = build_command(worktree, "model", "low", schema, output)
+            with self.assertRaises(PayloadValidationError):
+                validate_child_transport(
+                    worktree,
+                    command,
+                    f"Read {other / 'source.py'}",
+                    [other],
+                )
 
 
 class EscalationTests(unittest.TestCase):
@@ -271,6 +373,76 @@ class EscalationTests(unittest.TestCase):
     def test_no_escalation_for_infrastructure_failure(self):
         self.assertIsNone(next_profile("balanced", "RATE_LIMIT", 0))
         self.assertIsNone(next_profile("balanced", "MODEL_UNAVAILABLE", 0))
+        self.assertIsNone(next_profile("balanced", "VALIDATOR_DEFECT", 0))
+        self.assertIsNone(
+            next_profile(
+                "balanced", "HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER", 0
+            )
+        )
+
+    def test_no_change_result_triggers_one_escalation(self):
+        failure = classify_attempt(
+            {
+                "model_execution_observed": True,
+                "infrastructure_failure_class": None,
+            },
+            [],
+        )
+        self.assertEqual(failure, "IMPLEMENTATION_INCOMPLETE")
+        self.assertEqual(next_profile("balanced", failure, 0), "premium")
+        self.assertIsNone(next_profile("balanced", failure, 1))
+
+    def test_read_only_child_claim_is_not_capability_failure(self):
+        failure = classify_child_claim(
+            {
+                "status": "blocked",
+                "summary": "The workspace filesystem is read-only.",
+                "notes": ["Write access is required."],
+            }
+        )
+        self.assertEqual(
+            failure, "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS"
+        )
+        self.assertIsNone(next_profile("balanced", failure, 0))
+
+    def test_process_start_budget_accounting(self):
+        budget = InvocationBudget(maximum=2)
+        budget.record_payload_rejection()
+        self.assertEqual(budget.remaining, 2)
+        budget.record_process_start()
+        self.assertEqual(budget.remaining, 1)
+        budget.record_process_start()
+        with self.assertRaises(RuntimeError):
+            budget.record_process_start()
+
+
+class R2ScopeTests(unittest.TestCase):
+    def test_frozen_router_request_is_hash_bound_to_r1_config(self):
+        case, _, source_bytes = _load_case("mtr-docs-private-executor-r1")
+        self.assertIn("router_request", case)
+        self.assertTrue(source_bytes)
+        self.assertEqual(
+            case["router_request"]["request_id"],
+            "mtr-docs-private-executor-r1",
+        )
+
+    def test_canonical_memories_is_absent_from_r2_final_gates(self):
+        settings = load_json(ROOT / "config" / "repositories.json")
+        validate_r2_repository_scope(settings)
+        self.assertNotIn("canonical-memories", settings["repositories"])
+        pilot = load_json(ROOT / "config" / "pilot-r2.json")
+        self.assertTrue(
+            all(
+                case.get("repository") is None
+                or case.get("repository") != "canonical-memories"
+                for case in pilot["cases"]
+            )
+        )
+
+    def test_existing_fixed_premium_control_cannot_be_mutated(self):
+        for action in ("rerun", "merge", "modify"):
+            with self.assertRaises(RuntimeError):
+                assert_control_action_allowed(action)
 
 
 class ValidationTests(unittest.TestCase):

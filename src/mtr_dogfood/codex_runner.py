@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 
 RATE_LIMIT_PATTERNS = re.compile(r"rate limit|too many requests|quota|capacity", re.I)
@@ -16,6 +16,14 @@ MODEL_UNAVAILABLE_PATTERNS = re.compile(
 )
 AUTH_PATTERNS = re.compile(r"not authenticated|invalid token|login required", re.I)
 SCHEMA_PATTERNS = re.compile(r"invalid_json_schema|invalid schema for response_format", re.I)
+HOST_POLICY_PATTERNS = re.compile(
+    r"HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER|external code transfer", re.I
+)
+HOST_FILESYSTEM_POLICY_PATTERNS = re.compile(
+    r"writing is blocked by read-only sandbox|rejected: blocked by policy|"
+    r"rejected by user approval settings",
+    re.I,
+)
 
 
 def resolve_codex_executable() -> str:
@@ -56,6 +64,8 @@ def build_command(
     return [
         resolve_codex_executable(),
         "exec",
+        "--ignore-user-config",
+        "--ignore-rules",
         "-C",
         str(Path(worktree).resolve()),
         "--ephemeral",
@@ -66,7 +76,27 @@ def build_command(
         "-c",
         "memories.generate_memories=false",
         "-c",
+        "memories.use_memories=false",
+        "-c",
         'approval_policy="never"',
+        "-c",
+        'web_search="disabled"',
+        "-c",
+        "sandbox_workspace_write.network_access=false",
+        "--disable",
+        "memories",
+        "--disable",
+        "apps",
+        "--disable",
+        "browser_use",
+        "--disable",
+        "browser_use_external",
+        "--disable",
+        "computer_use",
+        "--disable",
+        "multi_agent",
+        "--disable",
+        "plugins",
         "--strict-config",
         "--sandbox",
         "workspace-write",
@@ -142,6 +172,9 @@ def classify_infrastructure(events: str, stderr: str) -> dict[str, int | str | N
     unavailable = len(MODEL_UNAVAILABLE_PATTERNS.findall(combined))
     auth = len(AUTH_PATTERNS.findall(combined))
     schema = len(SCHEMA_PATTERNS.findall(combined))
+    external_host_policy = len(HOST_POLICY_PATTERNS.findall(combined))
+    filesystem_host_policy = len(HOST_FILESYSTEM_POLICY_PATTERNS.findall(combined))
+    host_policy = external_host_policy + filesystem_host_policy
     failure = None
     if rate:
         failure = "RATE_LIMIT"
@@ -151,13 +184,42 @@ def classify_infrastructure(events: str, stderr: str) -> dict[str, int | str | N
         failure = "AUTHENTICATION_FAILURE"
     elif schema:
         failure = "VALIDATOR_DEFECT"
+    elif external_host_policy:
+        failure = "HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER"
+    elif filesystem_host_policy:
+        failure = "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS"
     return {
         "rate_limit_event_count": rate,
         "model_unavailable_event_count": unavailable,
         "authentication_event_count": auth,
         "output_schema_error_count": schema,
+        "host_policy_failure_count": host_policy,
         "infrastructure_failure_class": failure,
     }
+
+
+def observe_model_execution(lines: Iterable[str]) -> tuple[bool, bool]:
+    observed = False
+    completed = False
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event_type = event.get("type")
+        item = event.get("item")
+        item_type = item.get("type") if isinstance(item, dict) else None
+        if event_type in {"item.started", "item.completed"} and item_type in {
+            "agent_message",
+            "reasoning",
+            "command_execution",
+            "file_change",
+        }:
+            observed = True
+        if event_type == "turn.completed" and isinstance(event.get("usage"), dict):
+            observed = True
+            completed = True
+    return observed, completed
 
 
 def run_codex(
@@ -165,38 +227,91 @@ def run_codex(
     prompt: str,
     raw_directory: str | Path,
     *,
+    worktree: str | Path,
     timeout_seconds: int,
+    on_process_started: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     raw = Path(raw_directory)
     raw.mkdir(parents=True, exist_ok=True)
     events_path = raw / "codex-events.jsonl"
     stdout_path = raw / "stdout.log"
     stderr_path = raw / "stderr.log"
+    child_temp = Path(worktree, ".mtr-dogfood-r2", "tmp")
+    child_temp.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    process = subprocess.run(
-        command,
-        input=prompt,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        timeout=timeout_seconds,
-        check=False,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-    )
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=worktree,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={
+                **os.environ,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "TEMP": str(child_temp.resolve()),
+                "TMP": str(child_temp.resolve()),
+            },
+        )
+    except OSError as exc:
+        elapsed = time.monotonic() - started
+        events_path.write_text("", encoding="utf-8")
+        stdout_path.write_text("", encoding="utf-8")
+        stderr_path.write_text(str(exc), encoding="utf-8")
+        return {
+            "exit_code": None,
+            "wall_time_seconds": round(elapsed, 3),
+            "child_process_started": False,
+            "model_execution_observed": False,
+            "model_execution_completed": False,
+            "timed_out": False,
+            "command_count": 0,
+            "file_change_event_count": 0,
+            **{key: None for key in (
+                "input_tokens",
+                "cached_input_tokens",
+                "output_tokens",
+                "reasoning_output_tokens",
+            )},
+            "rate_limit_event_count": 0,
+            "model_unavailable_event_count": 0,
+            "authentication_event_count": 0,
+            "output_schema_error_count": 0,
+            "host_policy_failure_count": 0,
+            "infrastructure_failure_class": "SHELL_COMMAND_NOT_FOUND",
+        }
+    if on_process_started is not None:
+        on_process_started()
+    timed_out = False
+    try:
+        stdout, stderr = process.communicate(input=prompt, timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        process.kill()
+        stdout, stderr = process.communicate()
     elapsed = time.monotonic() - started
-    events_path.write_text(process.stdout, encoding="utf-8")
-    stdout_path.write_text(process.stdout, encoding="utf-8")
-    stderr_path.write_text(process.stderr, encoding="utf-8")
-    lines = process.stdout.splitlines()
+    events_path.write_text(stdout, encoding="utf-8")
+    stdout_path.write_text(stdout, encoding="utf-8")
+    stderr_path.write_text(stderr, encoding="utf-8")
+    lines = stdout.splitlines()
+    observed, completed = observe_model_execution(lines)
     result: dict[str, Any] = {
         "exit_code": process.returncode,
         "wall_time_seconds": round(elapsed, 3),
+        "child_process_started": True,
+        "model_execution_observed": observed,
+        "model_execution_completed": completed,
+        "timed_out": timed_out,
         "command_count": sum(1 for line in lines if '"item.type":"command_execution"' in line),
         "file_change_event_count": sum(
             1 for line in lines if '"item.type":"file_change"' in line
         ),
         **extract_usage(lines),
-        **classify_infrastructure(process.stdout, process.stderr),
+        **classify_infrastructure(stdout, stderr),
     }
+    if timed_out and result["infrastructure_failure_class"] is None and not observed:
+        result["infrastructure_failure_class"] = "DEPENDENCY_OR_ENVIRONMENT_FAILURE"
     return result

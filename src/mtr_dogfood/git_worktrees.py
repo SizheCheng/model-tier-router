@@ -114,6 +114,23 @@ def remove_worktree(repository: str | Path, pool_root: str | Path, worktree: str
     _git(repository, "worktree", "remove", "--force", str(target))
 
 
+def delete_unadvanced_branch(
+    repository: str | Path,
+    branch: str,
+    baseline: str,
+) -> None:
+    branch_ref = f"refs/heads/{branch}"
+    existing = _git(
+        repository, "show-ref", "--verify", "--quiet", branch_ref, check=False
+    )
+    if existing.returncode != 0:
+        return
+    branch_head = _git(repository, "rev-parse", branch_ref).stdout.strip()
+    if branch_head != baseline:
+        raise GitContractError("refusing to delete an advanced attempt branch")
+    _git(repository, "branch", "-D", "--", branch)
+
+
 def changed_paths(worktree: str | Path) -> list[str]:
     unstaged = _git(worktree, "diff", "--name-only").stdout.splitlines()
     untracked = _git(

@@ -1,10 +1,8 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "baseline": {
     "model-tier-router": "PYTHONPATH=src python -B -m unittest discover -s tests -v",
-    "canonical-memories": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\verify_memory_repo.ps1",
-    "qwen-redaction-standalone": "python -B -m pytest -q with QWEN_STAGE12LI validation and nested atomic roots",
-    "shortage-B": ".venv\\Scripts\\python.exe -B -m pytest -q tests"
+    "qwen-redaction-standalone": "python -B -m pytest -q with QWEN_STAGE12LI validation and nested atomic roots"
   },
   "freeze_rule": "Every selected case embeds its complete command arrays and environment before Router invocation."
 }

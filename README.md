@@ -26,6 +26,21 @@ The installed console equivalents are `mtr-dogfood preflight`,
 `mtr-dogfood run`, `mtr-dogfood batch`, `mtr-dogfood report`, and
 `mtr-dogfood record-outcome`.
 
+R2 runs only the two authorized Router lanes. The fixed-premium R1 control is
+read-only evidence and cannot be selected by the CLI. Each attempt copies the
+final-output schema into .mtr-dogfood-r2 inside a fresh target worktree,
+launches Codex with that worktree as its sole writable project directory, and
+removes the route metadata before computing the target diff. Payload rejection,
+process start, observable model execution, model completion, and validator
+completion are recorded separately. An eligible implementation or validator
+failure can trigger one fresh-baseline escalation; infrastructure failures
+cannot.
+
+User configuration, memories, web search, network access, apps, browser tools,
+plugins, computer use, and child subagents are disabled for the non-interactive
+child. The child prompt and command contain no harness or primary-repository
+source path.
+
 ## Safety model
 
 - exact target-repository allowlist and external-repository denylist;

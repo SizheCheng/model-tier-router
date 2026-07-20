@@ -1,0 +1,48 @@
+{
+  "schema_version": "2.0.0",
+  "route_id": "MODEL_TIER_ROUTER_DOGFOOD_R2_HARNESS_REPAIR_AND_TWO_LANE_REAL_RUNS",
+  "initial_harness_head": "2a63fd5827a5cdaa864c598d9e7f8f0b4db76c25",
+  "repair_ids": [
+    "R2_SCHEMA_PREVALIDATION",
+    "R2_WORKTREE_LOCAL_SCHEMA",
+    "R2_NO_EXTERNAL_CODE_TRANSFER",
+    "R2_CHILD_PATH_ISOLATION",
+    "R2_PROCESS_START_ACCOUNTING",
+    "R2_FAILURE_CLASSIFICATION",
+    "R2_SINGLE_ESCALATION",
+    "R2_NO_INFRASTRUCTURE_ESCALATION",
+    "R2_CANONICAL_DIRTY_NONBLOCKING"
+  ],
+  "r1_raw_evidence_present": true,
+  "r1_schema_rejection_process_attempt_count": 6,
+  "r1_completed_real_model_execution_count": 2,
+  "r1_balanced_failure_class": "IMPLEMENTATION_INCOMPLETE",
+  "r1_balanced_escalation_count": 0,
+  "r1_qwen_host_policy_failure": "HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER",
+  "baseline_validation": {
+    "harness": {
+      "passed": 37,
+      "failed": 0
+    },
+    "model-tier-router": {
+      "passed": 53,
+      "failed": 0
+    },
+    "qwen-redaction-standalone": {
+      "passed": 1807,
+      "failed": 0,
+      "subtests_passed": 91,
+      "warnings": 2
+    }
+  },
+  "repair_validation": {
+    "passed": 48,
+    "failed": 0
+  },
+  "prelaunch_loader_defect_repaired_before_any_child_start": true,
+  "post_run_host_filesystem_policy_classifier_repaired": true,
+  "new_child_codex_exec_process_starts": 0,
+  "existing_fixed_premium_control_unchanged": true,
+  "canonical_memories_access_count": 0,
+  "canonical_memories_mutation_count": 0
+}

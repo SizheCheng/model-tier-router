@@ -195,6 +195,221 @@ def write_reports(report: dict[str, Any], report_root: str | Path) -> list[str]:
     return [str(json_path), str(md_path), str(csv_path)]
 
 
+def build_r2_report(
+    batch_result: dict[str, Any],
+    receipts_root: str | Path,
+) -> dict[str, Any]:
+    attempts = [
+        attempt
+        for lane in batch_result.get("lanes", [])
+        for attempt in lane.get("attempts", [])
+    ]
+    executions = [attempt["execution"] for attempt in attempts]
+    validations = [attempt["validation"] for attempt in attempts]
+    outcomes = [attempt["outcome"] for attempt in attempts]
+    control_root = (
+        Path(receipts_root)
+        / "mtr-docs-private-executor-r1--fixed_premium_control"
+    )
+    control_execution = load_json(control_root / "execution.json")
+    control_validation = load_json(control_root / "validation.json")
+    control_outcome = load_json(control_root / "outcome.json")
+    usage_fields = (
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "reasoning_output_tokens",
+    )
+    usage_totals = {
+        key: sum(
+            int(execution[key])
+            for execution in executions
+            if isinstance(execution.get(key), int)
+        )
+        for key in usage_fields
+    }
+    lane_summaries = []
+    for lane in batch_result.get("lanes", []):
+        lane_attempts = lane.get("attempts", [])
+        lane_summaries.append(
+            {
+                "case_id": lane.get("case_id"),
+                "initial_profile": (
+                    lane.get("decision", {}).get("selected_profile")
+                    if lane.get("decision")
+                    else None
+                ),
+                "initial_profile_success": bool(
+                    lane_attempts
+                    and lane_attempts[0]["validation"].get("automated_acceptance")
+                ),
+                "escalation_eligible": bool(
+                    lane_attempts
+                    and lane_attempts[0]["validation"].get("failure_class")
+                    in {
+                        "IMPLEMENTATION_INCOMPLETE",
+                        "VALIDATOR_FAILURE_AFTER_SUCCESSFUL_MODEL_RUN",
+                        "CONTEXT_OR_REASONING_INSUFFICIENT",
+                    }
+                ),
+                "escalation_count": int(lane.get("escalation_count") or 0),
+                "final_profile_success": lane.get("final_status") == "VALIDATED",
+                "final_status": lane.get("final_status"),
+            }
+        )
+    mtr_attempts = [
+        attempt
+        for lane in batch_result.get("lanes", [])
+        if lane.get("case_id") == "mtr-docs-private-executor-r1"
+        for attempt in lane.get("attempts", [])
+    ]
+    mtr_failure_classes = [
+        attempt["validation"].get("failure_class") for attempt in mtr_attempts
+    ]
+    if (
+        control_validation.get("automated_acceptance")
+        and "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS"
+        in mtr_failure_classes
+    ):
+        comparison_classification = (
+            "HOST_EXECUTION_POLICY_DIVERGENCE_NOT_MODEL_TIER_UNDER_ROUTING"
+        )
+    elif control_validation.get("automated_acceptance") and mtr_attempts:
+        comparison_classification = (
+            "EXECUTION_VARIANCE_OR_PROMPT_HARNESS_DIVERGENCE_"
+            "NOT_MODEL_TIER_UNDER_ROUTING_ALONE"
+        )
+    else:
+        comparison_classification = "NO_VALIDATED_CONTROL_DIVERGENCE"
+    comparison = {
+        "existing_control_commit": control_outcome.get("commit_oid"),
+        "existing_control_validated": bool(
+            control_validation.get("automated_acceptance")
+        ),
+        "existing_control_changed_paths": control_execution.get("changed_paths", []),
+        "existing_control_diff_sha256": control_execution.get("diff_sha256"),
+        "existing_control_usage": {
+            key: control_execution.get(key) for key in usage_fields
+        },
+        "router_attempts": [
+            {
+                "profile": attempt["execution"].get("router_profile"),
+                "validated": bool(
+                    attempt["validation"].get("automated_acceptance")
+                ),
+                "changed_paths": attempt["execution"].get("changed_paths", []),
+                "diff_sha256": attempt["execution"].get("diff_sha256"),
+                "usage": {
+                    key: attempt["execution"].get(key) for key in usage_fields
+                },
+            }
+            for attempt in mtr_attempts
+        ],
+        "comparison_classification": comparison_classification,
+        "causal_wall_time_claim": False,
+        "wall_time_label": "OBSERVED_ONLY_CONCURRENCY_CONTAMINATED",
+    }
+    return {
+        "schema_version": "2.0.0",
+        "route_id": batch_result.get("route_id"),
+        "pre_model_payload_rejection_count": batch_result.get(
+            "pre_model_payload_rejection_count", 0
+        ),
+        "codex_exec_process_start_count": batch_result.get(
+            "child_codex_exec_process_start_count", 0
+        ),
+        "observable_real_model_execution_count": sum(
+            bool(execution.get("model_execution_observed"))
+            for execution in executions
+        ),
+        "model_execution_completed_count": sum(
+            bool(execution.get("model_execution_completed"))
+            for execution in executions
+        ),
+        "lane_summaries": lane_summaries,
+        "token_usage_by_attempt": [
+            {
+                "case_id": execution.get("case_id"),
+                "attempt": execution.get("attempt"),
+                "profile": execution.get("router_profile"),
+                **{key: execution.get(key) for key in usage_fields},
+            }
+            for execution in executions
+        ],
+        "usage_totals": usage_totals,
+        "validation_results": validations,
+        "host_policy_failure_count": sum(
+            str(execution.get("infrastructure_failure_class") or "").startswith(
+                "HOST_POLICY_"
+            )
+            for execution in executions
+        ),
+        "host_policy_signal_count": sum(
+            int(execution.get("host_policy_failure_count") or 0)
+            for execution in executions
+        ),
+        "infrastructure_failure_count": sum(
+            execution.get("infrastructure_failure_class") is not None
+            for execution in executions
+        ),
+        "target_commits": [
+            outcome.get("commit_oid")
+            for outcome in outcomes
+            if outcome.get("commit_oid")
+        ],
+        "automatic_merges": [
+            outcome.get("merge_oid")
+            for outcome in outcomes
+            if outcome.get("auto_merged")
+        ],
+        "branches_retained": [
+            outcome.get("branch")
+            for outcome in outcomes
+            if outcome.get("commit_created")
+        ],
+        "existing_control_comparison": comparison,
+        "existing_fixed_premium_control_unchanged": batch_result.get(
+            "existing_fixed_premium_control_unchanged"
+        ),
+        "wall_time_measurement_quality": "CONTAMINATED_BY_CONCURRENT_CODEX_SESSIONS",
+        "lanes": batch_result.get("lanes", []),
+    }
+
+
+def write_r2_reports(report: dict[str, Any], report_root: str | Path) -> list[str]:
+    root = Path(report_root)
+    root.mkdir(parents=True, exist_ok=True)
+    json_path = root / "pilot-r2.json"
+    md_path = root / "pilot-r2.md"
+    csv_path = root / "pilot-r2.csv"
+    write_json(json_path, report)
+    md_path.write_text(
+        "\n".join(
+            [
+                "# Automated dogfood pilot R2",
+                "",
+                f"- Codex process starts: {report['codex_exec_process_start_count']}",
+                f"- Observable real-model executions: {report['observable_real_model_execution_count']}",
+                f"- Usage totals: {json.dumps(report['usage_totals'], sort_keys=True)}",
+                f"- Lanes: {json.dumps(report['lane_summaries'], sort_keys=True)}",
+                "- The existing fixed-premium control was read only and was not rerun or merged.",
+                "- Wall-time observations are concurrency-contaminated; no causal latency claim is made.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["metric", "value"])
+        for key, value in report.items():
+            if key not in {"lanes", "validation_results"}:
+                writer.writerow(
+                    [key, json.dumps(value, ensure_ascii=False, sort_keys=True)]
+                )
+    return [str(json_path), str(md_path), str(csv_path)]
+
+
 def _markdown(report: dict[str, Any]) -> str:
     return "\n".join(
         [

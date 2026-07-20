@@ -4,14 +4,14 @@
   "additionalProperties": false,
   "required": ["schema_version", "case_id", "repository", "baseline_head", "title", "task_text", "changed_path_patterns", "risk", "validator_plan_digest"],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"type": "string", "const": "1.0.0"},
     "case_id": {"type": "string"},
     "repository": {"type": "string"},
     "baseline_head": {"type": "string"},
     "title": {"type": "string"},
     "task_text": {"type": "string"},
     "changed_path_patterns": {"type": "array", "items": {"type": "string"}},
-    "risk": {"enum": ["LOW_RISK", "MEDIUM_RISK", "HIGH_RISK"]},
+    "risk": {"type": "string", "enum": ["LOW_RISK", "MEDIUM_RISK", "HIGH_RISK"]},
     "validator_plan_digest": {"type": "string"}
   }
 }
