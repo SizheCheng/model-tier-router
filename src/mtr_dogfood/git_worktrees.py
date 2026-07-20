@@ -109,9 +109,16 @@ def create_worktree(
 
 def remove_worktree(repository: str | Path, pool_root: str | Path, worktree: str | Path) -> None:
     target = Path(worktree).resolve()
-    if not is_contained(pool_root, target) or same_path(pool_root, target):
+    pool = Path(pool_root).resolve()
+    if not is_contained(pool, target) or same_path(pool, target):
         raise GitContractError("refusing to remove path outside pool")
     _git(repository, "worktree", "remove", "--force", str(target))
+    parent = target.parent
+    while is_contained(pool, parent) and not same_path(pool, parent):
+        if any(parent.iterdir()):
+            break
+        parent.rmdir()
+        parent = parent.parent
 
 
 def delete_unadvanced_branch(
@@ -133,15 +140,21 @@ def delete_unadvanced_branch(
 
 def changed_paths(worktree: str | Path) -> list[str]:
     unstaged = _git(worktree, "diff", "--name-only").stdout.splitlines()
+    staged = _git(
+        worktree, "diff", "--cached", "--name-only"
+    ).stdout.splitlines()
     untracked = _git(
         worktree, "ls-files", "--others", "--exclude-standard"
     ).stdout.splitlines()
-    return sorted(set(unstaged + untracked))
+    return sorted(set(unstaged + staged + untracked))
 
 
 def diff_bytes(worktree: str | Path) -> bytes:
     tracked = subprocess.run(
-        ["git", "-C", str(worktree), "diff", "--binary", "--no-ext-diff"],
+        [
+            "git", "-C", str(worktree), "diff", "HEAD", "--binary",
+            "--no-ext-diff",
+        ],
         capture_output=True,
         check=True,
     ).stdout

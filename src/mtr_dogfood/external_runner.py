@@ -1,0 +1,1353 @@
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+from .codex_runner import resolve_codex_executable, run_codex
+from .config import ContractError, canonical_json_bytes, harness_root, is_contained, load_json, same_path
+from .git_worktrees import (
+    GitContractError, changed_paths, commit_exact_paths, create_worktree,
+    delete_unadvanced_branch, diff_bytes, fast_forward, remove_worktree,
+    repository_state, require_clean_baseline,
+)
+from .process_ancestry import (
+    NestedCodexAncestorError, ProcessAncestryError, ProcessProvider,
+    verify_standalone_powershell, windows_process_provider,
+)
+from .r2_contract import (
+    PayloadValidationError, classify_child_claim, final_output_valid,
+    validate_child_transport, validate_launch_payloads,
+)
+from .receipts import write_json
+from .router_adapter import assess_live
+from .runtime_contract import (
+    RUNTIME_ROUTE_ID, ProcessAccounting, assert_control_action_allowed,
+    load_runtime_contract, next_escalation_profile, validate_closeout,
+    validate_contract_paths,
+)
+from .validation import (
+    freeze_validator_plan, paths_allowed, risk_allows_auto_merge, run_plan,
+    summarize_validation,
+)
+from .writable_smoke import (
+    Launcher, build_external_codex_command, run_writable_smoke,
+    validate_external_command_shape,
+)
+
+
+FORBIDDEN_ACTION_RE = re.compile(
+    r"\bgit\s+(commit|merge|rebase|reset|clean|push|remote|tag|stash)\b"
+    r"|\b(publish|deploy|release|customer\s+delivery)\b", re.I,
+)
+CREDENTIAL_ACCESS_RE = re.compile(
+    r"auth\.json|\.ssh|credential|cookie|token|secret|Get-ChildItem\s+Env:|"
+    r"\$env:(?:CODEX|OPENAI|GITHUB|GH)_", re.I,
+)
+CONFIDENTIAL_CONTENT_RE = re.compile(
+    rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+    rb"|\bAKIA[0-9A-Z]{16}\b|\bsk-[A-Za-z0-9_-]{20,}\b"
+    rb"|\bBearer\s+[A-Za-z0-9._-]{20,}",
+    re.I,
+)
+
+
+def default_launcher(**kwargs: Any) -> dict[str, Any]:
+    return run_codex(**kwargs)
+
+
+def _git(repository: str | Path, *arguments: str, check: bool = True) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repository), *arguments], text=True,
+        encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
+    if check and completed.returncode != 0:
+        raise GitContractError(completed.stderr.strip() or completed.stdout.strip())
+    return completed.stdout.strip()
+
+
+def _normalize_infrastructure(value: Any) -> str | None:
+    mapping = {
+        "SHELL_COMMAND_NOT_FOUND": "MISSING_COMMAND",
+        "DEPENDENCY_OR_ENVIRONMENT_FAILURE": "ENVIRONMENT_FAILURE",
+        "VALIDATOR_DEFECT": "SCHEMA_REJECTION",
+        "MODEL_OUTPUT_SCHEMA_FAILURE": "SCHEMA_REJECTION",
+    }
+    return None if value is None else mapping.get(str(value), str(value))
+
+
+def _unstarted_execution(failure_class: str) -> dict[str, Any]:
+    return {
+        "exit_code": None,
+        "child_process_started": False,
+        "model_execution_observed": False,
+        "model_execution_completed": False,
+        "host_policy_failure_count": 0,
+        "rate_limit_event_count": 0,
+        "model_unavailable_event_count": 0,
+        "authentication_event_count": 0,
+        "output_schema_error_count": 0,
+        "infrastructure_failure_class": failure_class,
+        "input_tokens": None,
+        "cached_input_tokens": None,
+        "output_tokens": None,
+        "reasoning_output_tokens": None,
+    }
+
+
+def classify_external_attempt(
+    execution: dict[str, Any], claim: dict[str, Any], *, output_valid: bool,
+    schema_unchanged: bool, changed: list[str], changed_paths_allowed: bool,
+    automated_acceptance: bool, forbidden_action: bool,
+    confidentiality_ok: bool = True,
+) -> str:
+    claim_failure = classify_child_claim(claim) if output_valid else None
+    infrastructure = _normalize_infrastructure(execution.get("infrastructure_failure_class"))
+    if claim_failure:
+        return claim_failure
+    if int(execution.get("host_policy_failure_count") or 0) > 0:
+        if infrastructure == "HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER":
+            return infrastructure
+        return "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS"
+    if infrastructure:
+        return infrastructure
+    if not output_valid or not schema_unchanged:
+        return "SCHEMA_REJECTION"
+    if forbidden_action:
+        return "UNAUTHORIZED_ACTION"
+    if changed and not changed_paths_allowed:
+        return "UNAUTHORIZED_ACTION"
+    if not confidentiality_ok:
+        return "CONFIDENTIALITY_BOUNDARY"
+    if not execution.get("model_execution_observed"):
+        return "ENVIRONMENT_FAILURE"
+    if not execution.get("model_execution_completed"):
+        return "CONTEXT_OR_REASONING_INSUFFICIENT"
+    if not changed:
+        return "IMPLEMENTATION_INCOMPLETE"
+    if not changed_paths_allowed or not automated_acceptance:
+        return "VALIDATOR_FAILURE_AFTER_ALLOWED_CHANGE"
+    return ""
+
+
+def _confidentiality_scan(
+    worktree: Path, repository_id: str, paths: list[str]
+) -> bool:
+    if repository_id != "qwen-redaction-standalone":
+        return True
+    for relative in paths:
+        path = worktree / relative
+        if path.suffix.casefold() not in {".py", ".txt", ".md", ".json"}:
+            return False
+        data = path.read_bytes()
+        if len(data) > 2_000_000 or b"\x00" in data:
+            return False
+        if CONFIDENTIAL_CONTENT_RE.search(data):
+            return False
+    return True
+
+
+def _scan_child_commands(
+    events_path: Path,
+    forbidden_paths: list[str | Path],
+    worktree: Path | None = None,
+) -> dict[str, bool]:
+    result = {
+        "forbidden_action_detected": False,
+        "external_path_access_detected": False,
+        "credential_access_detected": False,
+    }
+    if not events_path.exists():
+        return result
+    normalized = [
+        str(Path(path).resolve()).replace("/", "\\").rstrip("\\").casefold()
+        for path in forbidden_paths
+    ]
+    for line in events_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = event.get("item")
+        command = item.get("command") if isinstance(item, dict) else None
+        if not isinstance(command, str):
+            continue
+        if FORBIDDEN_ACTION_RE.search(command):
+            result["forbidden_action_detected"] = True
+        if CREDENTIAL_ACCESS_RE.search(command):
+            result["credential_access_detected"] = True
+        if re.search(r"(^|[\s\\/])\.\.([\\/]|$)", command):
+            result["external_path_access_detected"] = True
+        if worktree is not None:
+            for match in re.findall(r"(?i)\b[a-z]:[\\/][^\s\"'<>|]+", command):
+                candidate = match.rstrip(".,;:)]}")
+                if not is_contained(worktree, candidate):
+                    result["external_path_access_detected"] = True
+        command_normalized = command.replace("/", "\\").casefold()
+        if any(path + "\\" in command_normalized for path in normalized):
+            result["external_path_access_detected"] = True
+    return result
+
+
+def _file_hashes(directory: Path) -> dict[str, str]:
+    return {
+        path.relative_to(directory).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _sanitized_claim_summary(claim: dict[str, Any]) -> dict[str, Any]:
+    summary = str(claim.get("summary", ""))
+    tests = claim.get("tests_run", [])
+    return {
+        "status": claim.get("status"),
+        "changed_paths": claim.get("changed_paths", []),
+        "prohibited_action_attempted": claim.get("prohibited_action_attempted"),
+        "summary_sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
+        "test_statuses": [
+            item.get("status")
+            for item in tests
+            if isinstance(item, dict)
+        ],
+        "notes_count": len(claim.get("notes", [])),
+    }
+
+
+def _render_plan(plan: dict[str, Any], worktree: Path, run_temp: Path) -> dict[str, Any]:
+    encoded = json.dumps(plan).replace("{worktree}", str(worktree))
+    return json.loads(encoded.replace("{run_temp}", str(run_temp)))
+
+
+def _task_payload(case: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "schema_version", "case_id", "repository", "baseline_head", "title",
+        "task_text", "changed_path_patterns", "risk", "validator_plan_digest",
+    )
+    return {key: case[key] for key in keys}
+
+
+def _child_prompt(case: dict[str, Any], worktree: Path) -> str:
+    validators = case["validator_plan"]
+    return f"""Implement one bounded task inside this assigned worktree:
+{worktree}
+
+Task: {case['title']}
+{case['task_text']}
+
+Allowed changed paths: {json.dumps(case['changed_path_patterns'])}
+Frozen parent-run validator instructions: {json.dumps(validators)}
+
+Read and write only inside the assigned worktree. Use only repository files and
+synthetic fixtures already present there. Do not access credentials, user
+memory, another repository, or any path outside the worktree. Do not use
+network tools, web search, browser tools, apps, plugins, or subagents. Do not
+run git commit, merge, rebase, reset, clean, push, remote, tag, or stash. Do not
+deploy, publish, release, deliver, or modify persistent Git configuration.
+Make the smallest useful change and return only the structured final result.
+"""
+
+
+def _load_frozen_case(
+    contract: dict[str, Any], descriptor: dict[str, Any], root: Path
+) -> tuple[dict[str, Any], bytes]:
+    source = (root / descriptor["source_task_receipt"]).resolve()
+    if not is_contained(root, source):
+        raise ContractError("frozen task source escapes harness")
+    source_bytes = source.read_bytes()
+    if hashlib.sha256(source_bytes).hexdigest() != descriptor["source_task_sha256"]:
+        raise ContractError("frozen task receipt hash mismatch")
+    case = load_json(source)
+    if case.get("case_id") != descriptor["case_id"]:
+        raise ContractError("frozen task case id mismatch")
+    if freeze_validator_plan(case["validator_plan"]) != case["validator_plan_digest"]:
+        raise ContractError("frozen validator plan digest mismatch")
+    request_source = (root / contract["paths"]["source_router_request_config"]).resolve()
+    request_bytes = request_source.read_bytes()
+    if hashlib.sha256(request_bytes).hexdigest() != contract["paths"]["source_router_request_config_sha256"]:
+        raise ContractError("frozen Router request config hash mismatch")
+    request_config = load_json(request_source)
+    request_case = next((item for item in request_config.get("cases", []) if item.get("case_id") == case["case_id"]), None)
+    if request_case is None:
+        raise ContractError("frozen Router request is missing")
+    for field in ("repository", "baseline_head", "task_text"):
+        if request_case.get(field) != case.get(field):
+            raise ContractError(f"frozen Router request binding mismatch: {field}")
+    if freeze_validator_plan(request_case["validator_plan"]) != case["validator_plan_digest"]:
+        raise ContractError("frozen Router validator binding mismatch")
+    case["router_request"] = request_case["router_request"]
+    return case, source_bytes
+
+
+def _verify_control(contract: dict[str, Any]) -> dict[str, Any]:
+    control = contract["existing_fixed_premium_control"]
+    assert_control_action_allowed("read")
+    repository = contract["repositories"][control["repository"]]["path"]
+    branch_commit = _git(repository, "rev-parse", f"refs/heads/{control['branch']}")
+    parent = _git(repository, "rev-parse", f"{control['commit']}^")
+    if branch_commit != control["commit"] or parent != control["baseline"]:
+        raise RuntimeError("EXISTING_CONTROL_MISSING_OR_MUTATED")
+    if not control["read_only"] or control["rerun"] or control["merge"]:
+        raise RuntimeError("UNAUTHORIZED_CONTROL_RERUN_OR_MERGE")
+    return {
+        "branch": control["branch"], "commit": control["commit"],
+        "parent": parent, "unchanged": True, "rerun": False, "merge": False,
+    }
+
+
+def _pool_state(
+    pool: str | Path,
+    repositories: list[str | Path] | None = None,
+) -> dict[str, Any]:
+    root = Path(pool).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    entries = sorted(path.name for path in root.iterdir())
+    registered: set[str] = set()
+    for repository in repositories or []:
+        for line in _git(
+            repository, "worktree", "list", "--porcelain"
+        ).splitlines():
+            if not line.startswith("worktree "):
+                continue
+            candidate = Path(line.removeprefix("worktree ")).resolve()
+            if is_contained(root, candidate) and not same_path(root, candidate):
+                registered.add(str(candidate))
+    return {
+        "path": str(root),
+        "entry_count": len(entries),
+        "entries": entries,
+        "registered_worktree_count": len(registered),
+        "registered_worktrees": sorted(registered),
+    }
+
+
+def _preflight(contract: dict[str, Any], root: Path) -> dict[str, Any]:
+    validate_contract_paths(contract, root)
+    live_model_map = load_json(root / "config" / "model-map.json")
+    profiles = live_model_map.get("logical_profiles", {})
+    for profile, expected in contract["model_mapping"].items():
+        actual = profiles.get(profile, {})
+        if (
+            actual.get("codex_model") != expected["model"]
+            or actual.get("model_reasoning_effort") != expected["reasoning_effort"]
+            or actual.get("next_escalation_profile") != expected["next"]
+        ):
+            raise RuntimeError("UNKNOWN_PROFILE")
+    if set(profiles) != set(contract["model_mapping"]):
+        raise RuntimeError("UNKNOWN_PROFILE")
+    harness_state = repository_state(root)
+    if not same_path(harness_state["root"], root):
+        raise RuntimeError("HARNESS_STATE_MISMATCH")
+    if (
+        not harness_state["clean"] or harness_state["remotes"]
+        or harness_state["locks"] or harness_state["active_operations"]
+    ):
+        raise RuntimeError("HARNESS_STATE_MISMATCH")
+    parent = _git(root, "rev-parse", "HEAD^")
+    subject = _git(root, "show", "-s", "--format=%s", "HEAD")
+    if parent != contract["prepared_from_harness_head"] or subject != contract["preparation_commit_subject"]:
+        raise RuntimeError("HARNESS_STATE_MISMATCH")
+    targets = []
+    for repository_id, entry in contract["repositories"].items():
+        state = require_clean_baseline(entry["path"], entry["path"], entry["baseline_head"])
+        if state["branch"] != entry["branch"]:
+            raise RuntimeError("TARGET_STATE_MISMATCH")
+        targets.append({
+            "repository": repository_id, "branch": state["branch"],
+            "head": state["head"], "clean": state["clean"],
+        })
+    pool = _pool_state(
+        contract["paths"]["worktree_pool"],
+        [entry["path"] for entry in contract["repositories"].values()],
+    )
+    if pool["entry_count"] != 0 or pool["registered_worktree_count"] != 0:
+        raise RuntimeError("WORKTREE_POOL_NOT_EMPTY")
+    return {
+        "harness": {"head": harness_state["head"], "clean": True, "remote_count": 0},
+        "targets": targets, "control": _verify_control(contract),
+        "worktree_pool": pool,
+    }
+
+
+def _task_still_useful(case: dict[str, Any], repository: Path) -> None:
+    if case["case_id"] == "mtr-docs-private-executor-r1":
+        for relative in (
+            "docs/dogfood-automation.md",
+            "tests/integrations/test_dogfood_automation.py",
+        ):
+            if (repository / relative).exists():
+                raise RuntimeError("FROZEN_TASK_OR_VALIDATOR_MISSING")
+    elif case["case_id"] == "qwen-docx-hidden-elements-r1":
+        text = (repository / "tests" / "redaction" / "test_docx_package.py").read_text(encoding="utf-8")
+        if "vanish" in text or "webHidden" in text:
+            raise RuntimeError("FROZEN_TASK_OR_VALIDATOR_MISSING")
+
+
+def _run_attempt(
+    contract: dict[str, Any], case: dict[str, Any], descriptor: dict[str, Any],
+    source_task_bytes: bytes, decision: dict[str, Any], profile: str,
+    attempt: int, escalation_count: int, budget: ProcessAccounting,
+    launcher: Launcher, ancestry_guard: Callable[[], dict[str, Any]],
+    executable_resolver: Callable[[], str], root: Path,
+) -> dict[str, Any]:
+    repository_entry = contract["repositories"][case["repository"]]
+    repository = Path(repository_entry["path"])
+    baseline = case["baseline_head"]
+    require_clean_baseline(repository, repository, baseline)
+    receipt_dir = root / contract["reporting"]["receipt_root"] / case["case_id"] / f"attempt-{attempt}"
+    raw_dir = root / contract["reporting"]["raw_root"] / case["case_id"] / f"attempt-{attempt}"
+    run_temp = raw_dir / "validator-temp"
+    (run_temp / "validation" / "atomic").mkdir(parents=True, exist_ok=True)
+    worktree = (
+        Path(contract["paths"]["worktree_pool"]) / case["repository"]
+        / f"{case['case_id']}-r3" / f"router_auto-{attempt}"
+    )
+    branch = f"{descriptor['branch_prefix']}-{attempt}"
+    create_worktree(repository, contract["paths"]["worktree_pool"], worktree, branch, baseline)
+    committed = False
+    result: dict[str, Any] = {}
+    output_valid = False
+    filesystem_mutation = False
+    validator_completed = False
+    try:
+        metadata = worktree / ".mtr-dogfood-r3"
+        metadata.mkdir(parents=True, exist_ok=False)
+        local_schema = metadata / "execution-result.schema.json"
+        final_output = metadata / "final-result.json"
+        shutil.copyfile(root / "schemas" / "execution-result.schema.json", local_schema)
+        output_schema = load_json(local_schema)
+        schema_digest = hashlib.sha256(local_schema.read_bytes()).hexdigest()
+        receipt_dir.mkdir(parents=True, exist_ok=True)
+        (receipt_dir / "task.json").write_bytes(source_task_bytes)
+        authority = {
+            "schema_version": "1.0.0", "contract_id": RUNTIME_ROUTE_ID,
+            "case_id": case["case_id"], "target_repository": str(repository),
+            "baseline_head": baseline, "allowed_worktree": str(worktree),
+            "allowed_task": case["task_text"],
+            "allowed_validation": [item["name"] for item in case["validator_plan"]["commands"]],
+            "allowed_commit_behavior": "validated local commit; risk-gated merge",
+            "external_push_authorized": False,
+            "known_external_sessions_declared_active": True,
+            "execution_authority_source": "explicit external R3 runtime contract",
+            "router_execution_authorized": False, "router_authorized_write_scope": [],
+            "worktree_local_schema_path": str(local_schema),
+            "child_writable_roots": [str(worktree)],
+        }
+        write_json(receipt_dir / "authority-receipt.json", authority)
+        write_json(receipt_dir / "decision.json", decision)
+        mapping = contract["model_mapping"][profile]
+        command = build_external_codex_command(
+            "codex.exe", worktree, mapping["model"],
+            mapping["reasoning_effort"], local_schema, final_output,
+        )
+        prompt = _child_prompt(case, worktree)
+        forbidden_paths = [
+            root, *[entry["path"] for entry in contract["repositories"].values()],
+            *contract["denylist"],
+        ]
+        budget.record_prelaunch()
+        try:
+            validate_launch_payloads(
+                _task_payload(case),
+                load_json(root / "schemas" / "task.schema.json"),
+                authority,
+                load_json(root / "schemas" / "authority-receipt.schema.json"),
+                decision,
+                output_schema,
+                set(contract["model_mapping"]),
+            )
+            validate_external_command_shape(command, worktree)
+            validate_child_transport(worktree, command, prompt, forbidden_paths)
+        except PayloadValidationError:
+            result = _unstarted_execution("SCHEMA_REJECTION")
+        else:
+            ancestry_guard()
+            try:
+                command[0] = executable_resolver()
+            except FileNotFoundError:
+                result = _unstarted_execution("MISSING_COMMAND")
+            else:
+                budget.require_start_available()
+                starts_before = budget.os_child_process_started
+                result = launcher(
+                    command=command, prompt=prompt, raw_directory=raw_dir,
+                    worktree=worktree,
+                    timeout_seconds=int(case.get("model_timeout_seconds", 1200)),
+                    on_process_started=budget.record_process_start,
+                )
+                started_delta = budget.os_child_process_started - starts_before
+                if started_delta != int(bool(result.get("child_process_started"))):
+                    raise RuntimeError("ENVIRONMENT_FAILURE")
+        output_valid = final_output_valid(final_output, output_schema)
+        claim: dict[str, Any] = load_json(final_output) if output_valid else {}
+        if final_output.exists():
+            shutil.copyfile(final_output, raw_dir / "final-result.json")
+        schema_unchanged = (
+            local_schema.exists()
+            and hashlib.sha256(local_schema.read_bytes()).hexdigest() == schema_digest
+        )
+        scan = _scan_child_commands(
+            raw_dir / "codex-events.jsonl", forbidden_paths, worktree
+        )
+        shutil.rmtree(metadata, ignore_errors=True)
+        shutil.rmtree(worktree / ".mtr-dogfood-r2", ignore_errors=True)
+
+        paths = changed_paths(worktree)
+        filesystem_mutation = bool(paths)
+        patch = diff_bytes(worktree)
+        (raw_dir / "target-diff.patch").write_bytes(patch)
+        path_scope_ok = paths_allowed(paths, case["changed_path_patterns"])
+        confidentiality_ok = _confidentiality_scan(
+            worktree, case["repository"], paths
+        )
+        forbidden_action = bool(
+            claim.get("prohibited_action_attempted")
+            or any(scan.values())
+            or (output_valid and sorted(claim.get("changed_paths", [])) != paths)
+        )
+        infrastructure = _normalize_infrastructure(
+            result.get("infrastructure_failure_class")
+        )
+        claim_failure = classify_child_claim(claim) if output_valid else None
+        validation_results: list[dict[str, Any]] = []
+        may_validate = bool(
+            result.get("child_process_started")
+            and result.get("model_execution_completed")
+            and result.get("exit_code") == 0
+            and output_valid
+            and schema_unchanged
+            and infrastructure is None
+            and claim_failure is None
+            and paths
+            and path_scope_ok
+            and confidentiality_ok
+            and not forbidden_action
+        )
+        validator_side_effect_free = True
+        if may_validate:
+            validation_results = run_plan(
+                worktree,
+                _render_plan(case["validator_plan"], worktree, run_temp),
+                raw_dir,
+            )
+            validator_completed = True
+            post_validator_paths = changed_paths(worktree)
+            if post_validator_paths != paths:
+                validator_side_effect_free = False
+                if result.get("infrastructure_failure_class") is None:
+                    result["infrastructure_failure_class"] = "ENVIRONMENT_FAILURE"
+                paths = post_validator_paths
+                filesystem_mutation = bool(paths)
+                patch = diff_bytes(worktree)
+                (raw_dir / "target-diff.patch").write_bytes(patch)
+                path_scope_ok = paths_allowed(paths, case["changed_path_patterns"])
+                confidentiality_ok = _confidentiality_scan(
+                    worktree, case["repository"], paths
+                )
+        validation = summarize_validation(
+            bool(
+                result.get("model_execution_completed")
+                and result.get("exit_code") == 0
+            ),
+            path_scope_ok,
+            validation_results,
+            forbidden_action or not validator_side_effect_free,
+        )
+        validation["confidentiality_scan_passed"] = confidentiality_ok
+        validation["validator_side_effect_free"] = validator_side_effect_free
+        failure_class = classify_external_attempt(
+            result,
+            claim,
+            output_valid=output_valid,
+            schema_unchanged=schema_unchanged,
+            changed=paths,
+            changed_paths_allowed=path_scope_ok,
+            automated_acceptance=validation["automated_acceptance"],
+            forbidden_action=forbidden_action,
+            confidentiality_ok=confidentiality_ok,
+        )
+        accepted = failure_class == ""
+        execution_receipt = {
+            "schema_version": "1.0.0",
+            "route_id": RUNTIME_ROUTE_ID,
+            "case_id": case["case_id"],
+            "attempt": attempt,
+            "profile": profile,
+            "model": mapping["model"],
+            "reasoning_effort": mapping["reasoning_effort"],
+            "escalation_count": escalation_count,
+            "child_process_started": bool(result.get("child_process_started")),
+            "model_execution_observed": bool(result.get("model_execution_observed")),
+            "model_execution_completed": bool(result.get("model_execution_completed")),
+            "exit_code": result.get("exit_code"),
+            "timed_out": bool(result.get("timed_out")),
+            "wall_time_seconds": result.get("wall_time_seconds"),
+            "final_output_valid": output_valid,
+            "schema_unchanged": schema_unchanged,
+            "filesystem_mutation_observed": filesystem_mutation,
+            "validator_completed": validator_completed,
+            "changed_paths": paths,
+            "confidentiality_scan_passed": confidentiality_ok,
+            "diff_sha256": hashlib.sha256(patch).hexdigest(),
+            "failure_class": failure_class,
+            "accepted": accepted,
+            "usage": {
+                key: result.get(key)
+                for key in (
+                    "input_tokens", "cached_input_tokens", "output_tokens",
+                    "reasoning_output_tokens",
+                )
+            },
+            "infrastructure": {
+                key: result.get(key)
+                for key in (
+                    "infrastructure_failure_class", "host_policy_failure_count",
+                    "rate_limit_event_count", "model_unavailable_event_count",
+                    "authentication_event_count", "output_schema_error_count",
+                )
+            },
+            "child_command_scan": scan,
+            "raw_log_sha256": _file_hashes(raw_dir),
+        }
+        write_json(receipt_dir / "execution.json", execution_receipt)
+        write_json(receipt_dir / "validation.json", validation)
+
+        target_commit = ""
+        merged = False
+        merge_blocked = ""
+        if accepted:
+            primary = require_clean_baseline(repository, repository, baseline)
+            if primary["branch"] != repository_entry["branch"]:
+                raise RuntimeError("CONCURRENT_TARGET_CHANGE")
+            identity = contract["commit_identity"]
+            target_commit = commit_exact_paths(
+                worktree,
+                paths,
+                f"Complete {case['case_id']} via Router",
+                identity["name"],
+                identity["email"],
+            )
+            committed = True
+            if descriptor["automatic_fast_forward_merge"]:
+                merge_allowed = risk_allows_auto_merge(
+                    case["risk"], case["change_class"], "ROUTER_AUTO"
+                )
+                if not merge_allowed:
+                    raise RuntimeError("UNAUTHORIZED_ACTION")
+                try:
+                    fast_forward(repository, baseline, target_commit)
+                except GitContractError:
+                    merge_blocked = "CONCURRENT_TARGET_CHANGE"
+                else:
+                    merged = True
+        outcome = {
+            **execution_receipt,
+            "branch": branch if committed else "",
+            "target_commit": target_commit,
+            "automatic_merge": merged,
+            "merge_blocked": merge_blocked,
+            "validation": validation,
+            "model_claim": _sanitized_claim_summary(claim),
+        }
+        write_json(receipt_dir / "outcome.json", outcome)
+        return outcome
+    finally:
+        budget.record_result(
+            result,
+            final_output_valid=output_valid,
+            filesystem_mutation=filesystem_mutation,
+            validator_completed=validator_completed,
+        )
+        if worktree.exists():
+            remove_worktree(repository, contract["paths"]["worktree_pool"], worktree)
+        if not committed:
+            delete_unadvanced_branch(repository, branch, baseline)
+
+
+Assessment = Callable[[str | Path, dict[str, Any], set[str]], dict[str, Any]]
+
+
+def execute_lane(
+    contract: dict[str, Any],
+    descriptor: dict[str, Any],
+    budget: ProcessAccounting,
+    launcher: Launcher,
+    ancestry_guard: Callable[[], dict[str, Any]],
+    executable_resolver: Callable[[], str],
+    root: Path,
+    *,
+    assessor: Assessment = assess_live,
+    attempt_runner: Callable[..., dict[str, Any]] = _run_attempt,
+) -> dict[str, Any]:
+    case, source_task_bytes = _load_frozen_case(contract, descriptor, root)
+    repository = Path(contract["repositories"][case["repository"]]["path"])
+    if case["baseline_head"] != contract["repositories"][case["repository"]]["baseline_head"]:
+        raise RuntimeError("BASELINE_FAILURE")
+    if any(
+        case.get(key)
+        for key in ("requires_confidential_payload", "requires_network", "requires_other_repository")
+    ):
+        raise RuntimeError("CONFIDENTIALITY_BOUNDARY")
+    _task_still_useful(case, repository)
+    decision = assessor(
+        contract["repositories"]["model-tier-router"]["path"],
+        case["router_request"],
+        set(contract["model_mapping"]),
+    )
+    if (
+        decision.get("execution_authorized") is not False
+        or decision.get("authorized_write_scope", []) != []
+        or decision.get("status") != "recommended"
+    ):
+        raise RuntimeError("ROUTER_DECISION_INVALID")
+    profile = decision.get("selected_profile")
+    if profile not in contract["model_mapping"]:
+        raise RuntimeError("UNKNOWN_PROFILE")
+
+    attempts = [
+        attempt_runner(
+            contract, case, descriptor, source_task_bytes, decision, profile,
+            1, 0, budget, launcher, ancestry_guard, executable_resolver, root,
+        )
+    ]
+    next_profile = None
+    if not attempts[0]["accepted"]:
+        next_profile = next_escalation_profile(
+            contract, profile, attempts[0]["failure_class"], 0
+        )
+    if next_profile is not None and budget.remaining > 0:
+        attempts.append(
+            attempt_runner(
+                contract, case, descriptor, source_task_bytes, decision,
+                next_profile, 2, 1, budget, launcher, ancestry_guard,
+                executable_resolver, root,
+            )
+        )
+    final = attempts[-1]
+    return {
+        "case_id": case["case_id"],
+        "repository": case["repository"],
+        "decision": decision,
+        "initial_profile": profile,
+        "attempts": attempts,
+        "escalation_eligible": next_profile is not None,
+        "escalation_count": len(attempts) - 1,
+        "final_profile": attempts[-1]["profile"],
+        "accepted": bool(final["accepted"]),
+        "final_status": "accepted" if final["accepted"] else final["failure_class"],
+        "target_commit": final["target_commit"],
+        "branch_retained": final["branch"],
+        "automatic_merge": bool(final["automatic_merge"]),
+        "merge_blocked": final.get("merge_blocked", ""),
+    }
+
+
+def product_tasks_allowed(smoke: dict[str, Any]) -> bool:
+    return bool(smoke.get("accepted"))
+
+
+def _usage_totals(lanes: list[dict[str, Any]], smoke: dict[str, Any]) -> dict[str, int | None]:
+    keys = (
+        "input_tokens", "cached_input_tokens", "output_tokens",
+        "reasoning_output_tokens",
+    )
+    usage_rows = [smoke.get("usage", {})]
+    usage_rows.extend(
+        attempt.get("usage", {})
+        for lane in lanes
+        for attempt in lane.get("attempts", [])
+    )
+    totals: dict[str, int | None] = {}
+    for key in keys:
+        values = [row.get(key) for row in usage_rows]
+        totals[key] = (
+            sum(int(value) for value in values if isinstance(value, int))
+            if any(isinstance(value, int) for value in values)
+            else None
+        )
+    return totals
+
+
+def _control_comparison(root: Path, lanes: list[dict[str, Any]]) -> dict[str, Any]:
+    receipt = root / "runs" / "receipts" / (
+        "mtr-docs-private-executor-r1--fixed_premium_control"
+    )
+    execution = load_json(receipt / "execution.json")
+    validation = load_json(receipt / "validation.json")
+    outcome = load_json(receipt / "outcome.json")
+    mtr = next(
+        (lane for lane in lanes if lane["case_id"] == "mtr-docs-private-executor-r1"),
+        None,
+    )
+    return {
+        "control_commit": outcome.get("commit_oid"),
+        "control_validated": bool(validation.get("automated_acceptance")),
+        "control_changed_paths": execution.get("changed_paths", []),
+        "control_diff_sha256": execution.get("diff_sha256"),
+        "control_validation": validation,
+        "control_usage": {
+            key: execution.get(key)
+            for key in (
+                "input_tokens", "cached_input_tokens", "output_tokens",
+                "reasoning_output_tokens",
+            )
+        },
+        "router_attempts": [] if mtr is None else [
+            {
+                "profile": item["profile"],
+                "accepted": item["accepted"],
+                "changed_paths": item["changed_paths"],
+                "diff_sha256": item["diff_sha256"],
+                "usage": item["usage"],
+            }
+            for item in mtr["attempts"]
+        ],
+        "causal_wall_time_claim": False,
+    }
+
+
+def _report_payload(
+    contract: dict[str, Any],
+    ancestry: dict[str, Any],
+    smoke: dict[str, Any],
+    lanes: list[dict[str, Any]],
+    budget: ProcessAccounting,
+    root: Path,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0.0",
+        "route_id": RUNTIME_ROUTE_ID,
+        "ordinary_powershell_ancestor_verified": bool(
+            ancestry.get("ordinary_powershell_ancestor_verified")
+        ),
+        "fixture_smoke": smoke,
+        "process_accounting": budget.as_dict(),
+        "maximum_child_process_starts": budget.maximum,
+        "child_process_starts_used": budget.os_child_process_started,
+        "model_execution_count": budget.model_execution_observed,
+        "lanes": lanes,
+        "router_decisions": [lane["decision"] for lane in lanes],
+        "usage_totals": _usage_totals(lanes, smoke),
+        "existing_control_comparison": _control_comparison(root, lanes),
+        "existing_fixed_premium_control_unchanged": True,
+        "target_commits_created": [
+            lane["target_commit"] for lane in lanes if lane["target_commit"]
+        ],
+        "target_branches_retained": [
+            lane["branch_retained"] for lane in lanes if lane["branch_retained"]
+        ],
+        "automatic_merges": [
+            lane["target_commit"] for lane in lanes if lane["automatic_merge"]
+        ],
+        "wall_time_measurement_quality": (
+            "OBSERVED_ONLY_CONCURRENCY_NOT_USED_FOR_CAUSAL_CLAIMS"
+        ),
+        "zero_action_counts": {
+            "confidential_payload_sent_count": 0,
+            "customer_delivery_count": 0,
+            "deployment_count": 0,
+            "external_push_count": 0,
+            "remote_mutation_count": 0,
+            "release_or_publication_count": 0,
+            "other_repository_access_count": 0,
+            "other_repository_mutation_count": 0,
+        },
+    }
+
+
+def _write_reports(
+    contract: dict[str, Any],
+    ancestry: dict[str, Any],
+    smoke: dict[str, Any],
+    lanes: list[dict[str, Any]],
+    budget: ProcessAccounting,
+    root: Path,
+) -> list[str]:
+    payload = _report_payload(contract, ancestry, smoke, lanes, budget, root)
+    report_paths = [root / item for item in contract["reporting"]["reports"]]
+    for path in report_paths:
+        if path.exists():
+            raise RuntimeError("REPORT_PATH_ALREADY_EXISTS")
+        path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(report_paths[0], payload)
+    lines = [
+        "# External automated dogfood pilot R3",
+        "",
+        f"- Fixture smoke: {smoke.get('status', 'not-run')}",
+        f"- Child process starts: {budget.os_child_process_started}/{budget.maximum}",
+        f"- Observable model executions: {budget.model_execution_observed}",
+        f"- Existing fixed-premium control unchanged: true",
+        "",
+        "Wall time is observational only and is not used for causal claims.",
+    ]
+    for lane in lanes:
+        lines.append(
+            f"- {lane['case_id']}: {lane['final_status']} "
+            f"(attempts={len(lane['attempts'])})"
+        )
+    report_paths[1].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with report_paths[2].open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "case_id", "attempt", "profile", "accepted", "failure_class",
+                "child_process_started", "model_execution_observed",
+                "input_tokens", "cached_input_tokens", "output_tokens",
+                "reasoning_output_tokens", "target_commit", "automatic_merge",
+            ],
+        )
+        writer.writeheader()
+        for lane in lanes:
+            for attempt in lane["attempts"]:
+                writer.writerow({
+                    "case_id": lane["case_id"],
+                    "attempt": attempt["attempt"],
+                    "profile": attempt["profile"],
+                    "accepted": attempt["accepted"],
+                    "failure_class": attempt["failure_class"],
+                    "child_process_started": attempt["child_process_started"],
+                    "model_execution_observed": attempt["model_execution_observed"],
+                    **attempt["usage"],
+                    "target_commit": attempt["target_commit"],
+                    "automatic_merge": attempt["automatic_merge"],
+                })
+    return [path.relative_to(root).as_posix() for path in report_paths]
+
+
+def _reject_unsafe_receipt_value(value: Any) -> None:
+    forbidden_keys = {
+        "command_line", "raw_command_line", "stdout", "stderr", "prompt",
+        "credential", "credentials",
+    }
+    if isinstance(value, dict):
+        if forbidden_keys.intersection(str(key).casefold() for key in value):
+            raise RuntimeError("SANITIZED_RECEIPT_VALIDATION_FAILED")
+        for child in value.values():
+            _reject_unsafe_receipt_value(child)
+    elif isinstance(value, list):
+        for child in value:
+            _reject_unsafe_receipt_value(child)
+
+
+def _validate_and_commit_reports(
+    contract: dict[str, Any], root: Path, report_paths: list[str]
+) -> str:
+    receipt_root = root / contract["reporting"]["receipt_root"]
+    receipt_paths = sorted(
+        path.relative_to(root).as_posix()
+        for path in receipt_root.rglob("*.json")
+        if path.is_file()
+    )
+    if not receipt_paths:
+        raise RuntimeError("SANITIZED_RECEIPT_VALIDATION_FAILED")
+    denied = [
+        str(Path(path).resolve()).replace("/", "\\").casefold()
+        for path in contract["denylist"]
+    ]
+    for relative in receipt_paths:
+        value = load_json(root / relative)
+        _reject_unsafe_receipt_value(value)
+        serialized = json.dumps(value, ensure_ascii=False).replace("/", "\\").casefold()
+        if any(path in serialized for path in denied):
+            raise RuntimeError("SANITIZED_RECEIPT_VALIDATION_FAILED")
+    expected = sorted(set(report_paths + receipt_paths))
+    actual = changed_paths(root)
+    if actual != expected:
+        raise RuntimeError("SANITIZED_RECEIPT_VALIDATION_FAILED")
+    identity = contract["commit_identity"]
+    return commit_exact_paths(
+        root,
+        expected,
+        contract["reporting"]["report_commit_subject"],
+        identity["name"],
+        identity["email"],
+    )
+
+
+def _final_repository_states(contract: dict[str, Any], root: Path) -> dict[str, Any]:
+    harness = repository_state(root)
+    targets: dict[str, Any] = {}
+    for repository_id, entry in contract["repositories"].items():
+        state = repository_state(entry["path"])
+        targets[repository_id] = {
+            "branch": state["branch"],
+            "head": state["head"],
+            "clean": state["clean"],
+            "locks": state["locks"],
+            "active_operations": state["active_operations"],
+        }
+    return {
+        "harness": {
+            "branch": harness["branch"], "head": harness["head"],
+            "clean": harness["clean"], "remote_count": len(harness["remotes"]),
+            "locks": harness["locks"],
+            "active_operations": harness["active_operations"],
+        },
+        "targets": targets,
+    }
+
+
+def _empty_closeout(contract: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "route_id": RUNTIME_ROUTE_ID,
+        "status": "BLOCKED_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_BEFORE_FIXTURE_SMOKE",
+        "ordinary_powershell_ancestor_verified": False,
+        "nested_codex_ancestor_detected": False,
+        "fixture_smoke": {},
+        "maximum_child_process_starts": contract["maximum_new_codex_exec_process_starts"],
+        "child_process_starts_used": 0,
+        "model_execution_count": 0,
+        "model_tier_router_lane": {},
+        "qwen_redaction_lane": {},
+        "router_decisions": [],
+        "usage_totals": {
+            "input_tokens": None, "cached_input_tokens": None,
+            "output_tokens": None, "reasoning_output_tokens": None,
+        },
+        "escalation_results": {},
+        "existing_control_unchanged": True,
+        "target_commits_created": [],
+        "target_branches_retained": [],
+        "automatic_merges": [],
+        "harness_report_commit": {},
+        "primary_repository_final_states": {},
+        "worktree_pool_final_state": {},
+        "confidential_payload_sent_count": 0,
+        "customer_delivery_count": 0,
+        "deployment_count": 0,
+        "external_push_count": 0,
+        "remote_mutation_count": 0,
+        "release_or_publication_count": 0,
+        "other_repository_access_count": 0,
+        "other_repository_mutation_count": 0,
+        "remaining_review_items": [],
+        "remaining_blockers": [],
+        "hard_stop_code": "",
+    }
+
+
+class ExternalRunner:
+    def __init__(
+        self,
+        contract_path: str | Path,
+        closeout_path: str | Path,
+        runner_pid: int,
+        *,
+        launcher: Launcher = default_launcher,
+        executable_resolver: Callable[[], str] = resolve_codex_executable,
+        process_provider: ProcessProvider = windows_process_provider,
+        assessor: Assessment = assess_live,
+        fixture_parent: str | Path | None = None,
+    ) -> None:
+        self.root = harness_root()
+        self.contract = load_runtime_contract(contract_path, self.root)
+        self.closeout_path = Path(closeout_path).resolve()
+        expected_closeout = (
+            self.root / self.contract["reporting"]["closeout"]
+        ).resolve()
+        if not same_path(self.closeout_path, expected_closeout):
+            raise ContractError("external closeout path mismatch")
+        self.runner_pid = int(runner_pid)
+        self.launcher = launcher
+        self.executable_resolver = executable_resolver
+        self.process_provider = process_provider
+        self.assessor = assessor
+        self.fixture_parent = fixture_parent
+
+    def _guard(self) -> dict[str, Any]:
+        return verify_standalone_powershell(
+            self.runner_pid, self.process_provider
+        )
+
+    def _finish(self, closeout: dict[str, Any], exit_code: int) -> tuple[dict[str, Any], int]:
+        schema = load_json(self.root / self.contract["paths"]["closeout_schema"])
+        validate_closeout(closeout, schema)
+        write_json(self.closeout_path, closeout)
+        return closeout, exit_code
+
+    def _commit_runtime_evidence(
+        self,
+        ancestry: dict[str, Any],
+        smoke: dict[str, Any],
+        lanes: list[dict[str, Any]],
+        budget: ProcessAccounting,
+    ) -> str:
+        report_paths = _write_reports(
+            self.contract, ancestry, smoke, lanes, budget, self.root
+        )
+        return _validate_and_commit_reports(self.contract, self.root, report_paths)
+
+    def run(self) -> tuple[dict[str, Any], int]:
+        contract = self.contract
+        closeout = _empty_closeout(contract)
+        budget = ProcessAccounting(
+            maximum=contract["maximum_new_codex_exec_process_starts"]
+        )
+        ancestry: dict[str, Any] = {}
+        smoke: dict[str, Any] = {}
+        lanes: list[dict[str, Any]] = []
+        try:
+            ancestry = self._guard()
+        except NestedCodexAncestorError as exc:
+            receipt = getattr(exc, "receipt", {})
+            closeout["nested_codex_ancestor_detected"] = True
+            closeout["ordinary_powershell_ancestor_verified"] = False
+            closeout["hard_stop_code"] = "NESTED_CODEX_ANCESTOR_DETECTED"
+            closeout["remaining_blockers"] = ["NESTED_CODEX_ANCESTOR_DETECTED"]
+            closeout["fixture_smoke"] = {
+                "created": False,
+                "ancestry_receipt": receipt,
+            }
+            return self._finish(closeout, 2)
+        except ProcessAncestryError:
+            closeout["hard_stop_code"] = "PROCESS_ANCESTRY_NOT_VERIFIED"
+            closeout["remaining_blockers"] = ["PROCESS_ANCESTRY_NOT_VERIFIED"]
+            return self._finish(closeout, 2)
+
+        closeout["ordinary_powershell_ancestor_verified"] = True
+        try:
+            preflight = _preflight(contract, self.root)
+            closeout["primary_repository_final_states"] = preflight
+        except (ContractError, GitContractError, RuntimeError) as exc:
+            code = str(exc) if str(exc).isupper() else "EXTERNAL_PREFLIGHT_FAILED"
+            closeout["hard_stop_code"] = code
+            closeout["remaining_blockers"] = [code]
+            return self._finish(closeout, 2)
+
+        smoke_receipt = (
+            self.root / contract["reporting"]["receipt_root"] / "writable-smoke.json"
+        )
+        smoke = run_writable_smoke(
+            contract,
+            self.root,
+            budget,
+            self.launcher,
+            self._guard,
+            self.executable_resolver,
+            self.root / contract["reporting"]["raw_root"] / "writable-smoke",
+            smoke_receipt,
+            fixture_parent=self.fixture_parent,
+        )
+        closeout["fixture_smoke"] = smoke
+        if not product_tasks_allowed(smoke):
+            report_commit = self._commit_runtime_evidence(
+                ancestry, smoke, lanes, budget
+            )
+            closeout.update({
+                "status": (
+                    "BLOCKED_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_"
+                    "WRITABLE_SMOKE_FAILED"
+                ),
+                "harness_report_commit": {"commit": report_commit},
+                "hard_stop_code": smoke.get("failure_class", "WRITABLE_SMOKE_FAILED"),
+                "remaining_blockers": [
+                    smoke.get("failure_class", "WRITABLE_SMOKE_FAILED")
+                ],
+                "child_process_starts_used": budget.os_child_process_started,
+                "model_execution_count": budget.model_execution_observed,
+                "usage_totals": _usage_totals(lanes, smoke),
+                "worktree_pool_final_state": _pool_state(
+                    contract["paths"]["worktree_pool"],
+                    [
+                        entry["path"]
+                        for entry in contract["repositories"].values()
+                    ],
+                ),
+                "primary_repository_final_states": _final_repository_states(
+                    contract, self.root
+                ),
+            })
+            return self._finish(closeout, 3)
+
+        lane_error = ""
+        for descriptor in contract["cases"]:
+            try:
+                lanes.append(
+                    execute_lane(
+                        contract,
+                        descriptor,
+                        budget,
+                        self.launcher,
+                        self._guard,
+                        self.executable_resolver,
+                        self.root,
+                        assessor=self.assessor,
+                    )
+                )
+            except (ContractError, GitContractError, RuntimeError) as exc:
+                lane_error = str(exc) if str(exc).isupper() else "PRODUCT_LANE_FAILED"
+                break
+
+        report_commit = self._commit_runtime_evidence(
+            ancestry, smoke, lanes, budget
+        )
+        final_states = _final_repository_states(contract, self.root)
+        pool = _pool_state(
+            contract["paths"]["worktree_pool"],
+            [entry["path"] for entry in contract["repositories"].values()],
+        )
+        control = _verify_control(contract)
+        by_case = {lane["case_id"]: lane for lane in lanes}
+        mtr_lane = by_case.get("mtr-docs-private-executor-r1", {})
+        expected_mtr_head = (
+            mtr_lane.get("target_commit")
+            if mtr_lane.get("automatic_merge")
+            else contract["repositories"]["model-tier-router"]["baseline_head"]
+        )
+        target_invariants = bool(
+            final_states["targets"]["model-tier-router"]["branch"]
+            == contract["repositories"]["model-tier-router"]["branch"]
+            and final_states["targets"]["model-tier-router"]["head"]
+            == expected_mtr_head
+            and final_states["targets"]["qwen-redaction-standalone"]["branch"]
+            == contract["repositories"]["qwen-redaction-standalone"]["branch"]
+            and final_states["targets"]["qwen-redaction-standalone"]["head"]
+            == contract["repositories"]["qwen-redaction-standalone"]["baseline_head"]
+            and not any(
+                item["locks"] or item["active_operations"]
+                for item in final_states["targets"].values()
+            )
+        )
+        merge_blocker = next(
+            (
+                lane["merge_blocked"]
+                for lane in lanes
+                if lane.get("merge_blocked")
+            ),
+            "",
+        )
+        runtime_blocker = lane_error or merge_blocker
+        if (
+            not final_states["harness"]["clean"]
+            or final_states["harness"]["branch"] != "main"
+            or final_states["harness"]["remote_count"] != 0
+            or final_states["harness"]["locks"]
+            or final_states["harness"]["active_operations"]
+            or pool["entry_count"] != 0
+            or pool["registered_worktree_count"] != 0
+            or not all(item["clean"] for item in final_states["targets"].values())
+            or not target_invariants
+            or not control["unchanged"]
+        ):
+            closeout["status"] = (
+                "BLOCKED_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_"
+                "CONTRACT_OR_FINAL_INVARIANT"
+            )
+            closeout["hard_stop_code"] = "FINAL_INVARIANT_VIOLATION"
+            exit_code = 6
+        elif runtime_blocker:
+            closeout["status"] = (
+                "BLOCKED_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_AFTER_FIXTURE_SMOKE"
+                if not lanes else
+                "PARTIAL_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_"
+                "WRITABLE_SMOKE_PASSED_REAL_LANES_INCOMPLETE"
+            )
+            closeout["hard_stop_code"] = runtime_blocker
+            exit_code = 4 if not lanes else 5
+        elif len(lanes) == 2 and all(lane["accepted"] for lane in lanes):
+            closeout["status"] = (
+                "PASS_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_"
+                "WRITABLE_SMOKE_AND_TWO_REAL_LANES_VERIFIED"
+            )
+            closeout["hard_stop_code"] = ""
+            exit_code = 0
+        else:
+            closeout["status"] = (
+                "PARTIAL_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_"
+                "WRITABLE_SMOKE_PASSED_REAL_LANES_INCOMPLETE"
+            )
+            closeout["hard_stop_code"] = ""
+            exit_code = 5
+
+        closeout.update({
+            "fixture_smoke": smoke,
+            "child_process_starts_used": budget.os_child_process_started,
+            "model_execution_count": budget.model_execution_observed,
+            "model_tier_router_lane": by_case.get(
+                "mtr-docs-private-executor-r1", {}
+            ),
+            "qwen_redaction_lane": by_case.get(
+                "qwen-docx-hidden-elements-r1", {}
+            ),
+            "router_decisions": [lane["decision"] for lane in lanes],
+            "usage_totals": _usage_totals(lanes, smoke),
+            "escalation_results": {
+                lane["case_id"]: {
+                    "eligible": lane["escalation_eligible"],
+                    "count": lane["escalation_count"],
+                }
+                for lane in lanes
+            },
+            "existing_control_unchanged": control["unchanged"],
+            "target_commits_created": [
+                lane["target_commit"] for lane in lanes if lane["target_commit"]
+            ],
+            "target_branches_retained": [
+                lane["branch_retained"] for lane in lanes if lane["branch_retained"]
+            ],
+            "automatic_merges": [
+                lane["target_commit"] for lane in lanes if lane["automatic_merge"]
+            ],
+            "harness_report_commit": {"commit": report_commit},
+            "primary_repository_final_states": final_states,
+            "worktree_pool_final_state": pool,
+            "remaining_review_items": [
+                lane["branch_retained"]
+                for lane in lanes
+                if lane["repository"] == "qwen-redaction-standalone"
+                and lane["branch_retained"]
+            ],
+            "remaining_blockers": [runtime_blocker] if runtime_blocker else [],
+        })
+        return self._finish(closeout, exit_code)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--contract", required=True)
+    parser.add_argument("--closeout", required=True)
+    parser.add_argument("--runner-pid", required=True, type=int)
+    arguments = parser.parse_args(argv)
+    try:
+        runner = ExternalRunner(
+            arguments.contract, arguments.closeout, arguments.runner_pid
+        )
+        closeout, exit_code = runner.run()
+    except (ContractError, GitContractError, RuntimeError, OSError) as exc:
+        closeout = _empty_closeout({
+            "maximum_new_codex_exec_process_starts": 5
+        })
+        closeout.update({
+            "status": (
+                "BLOCKED_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_"
+                "CONTRACT_OR_FINAL_INVARIANT"
+            ),
+            "hard_stop_code": (
+                str(exc) if str(exc).isupper() else "RUNTIME_CONTRACT_VIOLATION"
+            ),
+            "remaining_blockers": [
+                str(exc) if str(exc).isupper() else "RUNTIME_CONTRACT_VIOLATION"
+            ],
+        })
+        exit_code = 6
+        expected = (
+            harness_root() / "reports" / "pilot-r3-closeout.json"
+        ).resolve()
+        candidate = Path(arguments.closeout).resolve()
+        if same_path(candidate, expected):
+            write_json(candidate, closeout)
+    sys.stdout.write(canonical_json_bytes(closeout).decode("utf-8") + "\n")
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

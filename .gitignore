@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 runs/raw/
+/reports/pilot-r3-closeout.json
 worktrees/
 tmp/
 *.token

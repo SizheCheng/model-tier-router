@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0.0",
+  "preparation_route_id": "MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_RUNNER_PREPARATION_R1",
+  "route_id": "MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_WRITABLE_SMOKE_AND_TWO_REAL_LANES",
+  "prepared_from_harness_head": "a5fff2e2a209e2c5277a5b64d2d29392c4c31dc9",
+  "preparation_commit_subject": "Add external PowerShell dogfood runner",
+  "execution_topology": "ordinary PowerShell -> standalone harness runner -> Router -> top-level child codex exec",
+  "maximum_new_codex_exec_process_starts": 5,
+  "additional_retry_budget": 0,
+  "silent_model_substitution": false,
+  "allocation": {
+    "fixture_writable_smoke": 1,
+    "model_tier_router_initial": 1,
+    "model_tier_router_escalation_if_eligible": 1,
+    "qwen_redaction_initial": 1,
+    "qwen_redaction_escalation_if_eligible": 1
+  },
+  "paths": {
+    "harness": "C:/Users/sizhe/Documents/model-tier-router-dogfood",
+    "worktree_pool": "C:/Users/sizhe/Documents/model-tier-router-dogfood-worktrees",
+    "source_router_request_config": "config/pilot-r1.json",
+    "source_router_request_config_sha256": "7e44e2175ae682af373df3550ccd5cc6fa0743bc76079d1d5a4e8287c83c09e7",
+    "closeout_schema": "schemas/external-run-closeout.schema.json",
+    "writable_smoke_schema": "schemas/writable-smoke-result.schema.json"
+  },
+  "repositories": {
+    "model-tier-router": {
+      "path": "C:/Users/sizhe/Documents/model-tier-router",
+      "branch": "main",
+      "baseline_head": "a455debff9a01faa5481cb8a6ca98e31e29ec52a"
+    },
+    "qwen-redaction-standalone": {
+      "path": "C:/Users/sizhe/Documents/qwen-redaction-standalone",
+      "branch": "qwen-redaction-r1",
+      "baseline_head": "bbb1bd68882aeb735f29c448b00a5c21783b355f"
+    }
+  },
+  "denylist": [
+    "C:/Users/sizhe/Documents/model-tier-router-public",
+    "C:/Users/sizhe/Documents/canonical-memories",
+    "C:/Users/sizhe/Documents/shortage-B",
+    "C:/Users/sizhe/Documents/qwen",
+    "C:/Users/sizhe/Documents/trading-authority-OS"
+  ],
+  "model_mapping": {
+    "economy": {
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "low",
+      "next": "balanced"
+    },
+    "balanced": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "medium",
+      "next": "premium"
+    },
+    "premium": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "next": null
+    }
+  },
+  "fixture_smoke": {
+    "model_profile": "economy",
+    "readme_text": "Synthetic writable-workspace smoke repository for model-tier-router dogfood R3.\n",
+    "result_path": "smoke/result.txt",
+    "result_text": "WORKSPACE_WRITE_OK\n",
+    "timeout_seconds": 300
+  },
+  "cases": [
+    {
+      "case_id": "mtr-docs-private-executor-r1",
+      "repository": "model-tier-router",
+      "source_task_receipt": "runs/receipts/mtr-docs-private-executor-r1--router_auto/task.json",
+      "source_task_sha256": "ab0446be54ba29b4151c53c8f8cd8c156b021b0b9cd1189cde0206c6a1c55e7e",
+      "branch_prefix": "mtr-dogfood/mtr-docs-private-executor-r3/router_auto",
+      "automatic_fast_forward_merge": true,
+      "retain_for_human_review": false
+    },
+    {
+      "case_id": "qwen-docx-hidden-elements-r1",
+      "repository": "qwen-redaction-standalone",
+      "source_task_receipt": "runs/receipts/qwen-docx-hidden-elements-r1--router_auto/task.json",
+      "source_task_sha256": "d4f289857977eeccd8b9327ae3565e83f9939a71510be08a71f56f98ca821b31",
+      "branch_prefix": "mtr-dogfood/qwen-docx-hidden-elements-r3/router_auto",
+      "automatic_fast_forward_merge": false,
+      "retain_for_human_review": true
+    }
+  ],
+  "existing_fixed_premium_control": {
+    "repository": "model-tier-router",
+    "branch": "mtr-dogfood/mtr-docs-private-executor-r1/fixed_premium_control-1",
+    "commit": "e544cb7ee7497aa7706a06ef4aa55bfcf18bcca1",
+    "baseline": "a455debff9a01faa5481cb8a6ca98e31e29ec52a",
+    "read_only": true,
+    "rerun": false,
+    "merge": false
+  },
+  "child": {
+    "sandbox": "workspace-write",
+    "approval_policy": "never",
+    "prompt_transport": "stdin",
+    "jsonl_output": true,
+    "network_tools": false,
+    "web_search": false,
+    "additional_writable_directories": [],
+    "command_shape": [
+      "codex",
+      "exec",
+      "-C",
+      "<EXACT_WORKTREE_OR_FIXTURE>",
+      "--ephemeral",
+      "--model",
+      "<MAPPED_MODEL>",
+      "-c",
+      "model_reasoning_effort=\"<MAPPED_REASONING_EFFORT>\"",
+      "-c",
+      "memories.generate_memories=false",
+      "--sandbox",
+      "workspace-write",
+      "--ask-for-approval",
+      "never",
+      "--json",
+      "--output-schema",
+      "<WORKTREE_LOCAL_SCHEMA>",
+      "--output-last-message",
+      "<WORKTREE_LOCAL_FINAL_RESULT>",
+      "-"
+    ]
+  },
+  "failure_policy": {
+    "eligible_for_one_escalation": [
+      "IMPLEMENTATION_INCOMPLETE",
+      "VALIDATOR_FAILURE_AFTER_ALLOWED_CHANGE",
+      "CONTEXT_OR_REASONING_INSUFFICIENT"
+    ],
+    "never_escalate": [
+      "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS",
+      "HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER",
+      "NESTED_CODEX_ANCESTOR_DETECTED",
+      "SCHEMA_REJECTION",
+      "AUTHENTICATION_FAILURE",
+      "RATE_LIMIT",
+      "MODEL_UNAVAILABLE",
+      "MISSING_COMMAND",
+      "ENVIRONMENT_FAILURE",
+      "BASELINE_FAILURE",
+      "CONCURRENT_TARGET_CHANGE",
+      "CONFIDENTIALITY_BOUNDARY",
+      "UNAUTHORIZED_ACTION"
+    ],
+    "classification_order": [
+      "host-policy and infrastructure signals",
+      "schema and transport signals",
+      "authentication, rate-limit and model-availability signals",
+      "filesystem changes",
+      "validator results",
+      "model final claim"
+    ]
+  },
+  "worktree_policy": {
+    "one_fresh_worktree_per_attempt": true,
+    "every_attempt_starts_from_original_baseline": true,
+    "failed_attempt_commit": false,
+    "failed_attempt_cleanup": true,
+    "validated_branch_preservation": true,
+    "primary_repository_reset_clean_restore_or_stash": false,
+    "final_pool_registered_worktree_count": 0
+  },
+  "reporting": {
+    "reports": [
+      "reports/pilot-r3.json",
+      "reports/pilot-r3.md",
+      "reports/pilot-r3.csv"
+    ],
+    "closeout": "reports/pilot-r3-closeout.json",
+    "receipt_root": "runs/receipts/r3",
+    "raw_root": "runs/raw/r3",
+    "report_commit_subject": "Record external automated dogfood pilot R3",
+    "maximum_report_commits": 1
+  },
+  "commit_identity": {
+    "name": "SizheCheng",
+    "email": "286442303+SizheCheng@users.noreply.github.com",
+    "persistent_configuration": false
+  }
+}
