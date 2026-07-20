@@ -1,0 +1,22 @@
+metric,value
+automatic_merges,[]
+branches_retained,[]
+classification_correction_applied,true
+codex_exec_process_start_count,4
+existing_control_comparison,"{""causal_wall_time_claim"": false, ""comparison_classification"": ""HOST_EXECUTION_POLICY_DIVERGENCE_NOT_MODEL_TIER_UNDER_ROUTING"", ""existing_control_changed_paths"": [""docs/dogfood-automation.md"", ""tests/integrations/test_dogfood_automation.py""], ""existing_control_commit"": ""e544cb7ee7497aa7706a06ef4aa55bfcf18bcca1"", ""existing_control_diff_sha256"": ""9c7080dec039b6c5d0f73230f7c45c69758ac01d1485d1ebe485b7ef011c109c"", ""existing_control_diff_statistics"": {""deletions"": 0, ""files_changed"": 2, ""insertions"": 180, ""per_path"": [{""deletions"": 0, ""insertions"": 59, ""path"": ""docs/dogfood-automation.md""}, {""deletions"": 0, ""insertions"": 121, ""path"": ""tests/integrations/test_dogfood_automation.py""}]}, ""existing_control_usage"": {""cached_input_tokens"": 1302528, ""input_tokens"": 1385118, ""output_tokens"": 19356, ""reasoning_output_tokens"": 6548}, ""existing_control_validated"": true, ""router_attempts"": [{""changed_paths"": [], ""diff_sha256"": ""e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"", ""diff_statistics"": {""deletions"": 0, ""files_changed"": 0, ""insertions"": 0}, ""profile"": ""balanced"", ""usage"": {""cached_input_tokens"": 53248, ""input_tokens"": 77051, ""output_tokens"": 3044, ""reasoning_output_tokens"": 686}, ""validated"": false}, {""changed_paths"": [], ""diff_sha256"": ""e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"", ""diff_statistics"": {""deletions"": 0, ""files_changed"": 0, ""insertions"": 0}, ""profile"": ""premium"", ""usage"": {""cached_input_tokens"": 47104, ""input_tokens"": 71640, ""output_tokens"": 4481, ""reasoning_output_tokens"": 1278}, ""validated"": false}], ""wall_time_label"": ""OBSERVED_ONLY_CONCURRENCY_CONTAMINATED""}"
+existing_fixed_premium_control_unchanged,true
+hard_stop_code,"""HARNESS_REPAIR_TEST_FAILURE"""
+host_policy_failure_count,4
+host_policy_signal_count,7
+infrastructure_failure_count,4
+lane_summaries,"[{""case_id"": ""mtr-docs-private-executor-r1"", ""escalation_count"": 1, ""escalation_eligible"": false, ""final_profile_success"": false, ""final_status"": ""HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS"", ""initial_profile"": ""balanced"", ""initial_profile_success"": false}, {""case_id"": ""qwen-docx-hidden-elements-r1"", ""escalation_count"": 1, ""escalation_eligible"": false, ""final_profile_success"": false, ""final_status"": ""HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS"", ""initial_profile"": ""balanced"", ""initial_profile_success"": false}]"
+model_execution_completed_count,4
+observable_real_model_execution_count,4
+pre_model_payload_rejection_count,0
+route_id,"""MODEL_TIER_ROUTER_DOGFOOD_R2_HARNESS_REPAIR_AND_TWO_LANE_REAL_RUNS"""
+schema_version,"""2.0.0"""
+target_commits,[]
+token_usage_by_attempt,"[{""attempt"": 1, ""cached_input_tokens"": 53248, ""case_id"": ""mtr-docs-private-executor-r1"", ""input_tokens"": 77051, ""output_tokens"": 3044, ""profile"": ""balanced"", ""reasoning_output_tokens"": 686}, {""attempt"": 2, ""cached_input_tokens"": 47104, ""case_id"": ""mtr-docs-private-executor-r1"", ""input_tokens"": 71640, ""output_tokens"": 4481, ""profile"": ""premium"", ""reasoning_output_tokens"": 1278}, {""attempt"": 1, ""cached_input_tokens"": 0, ""case_id"": ""qwen-docx-hidden-elements-r1"", ""input_tokens"": 12805, ""output_tokens"": 283, ""profile"": ""balanced"", ""reasoning_output_tokens"": 121}, {""attempt"": 2, ""cached_input_tokens"": 40192, ""case_id"": ""qwen-docx-hidden-elements-r1"", ""input_tokens"": 63114, ""output_tokens"": 1059, ""profile"": ""premium"", ""reasoning_output_tokens"": 571}]"
+unauthorized_infrastructure_escalation_count,2
+usage_totals,"{""cached_input_tokens"": 140544, ""input_tokens"": 224610, ""output_tokens"": 8867, ""reasoning_output_tokens"": 2656}"
+wall_time_measurement_quality,"""CONTAMINATED_BY_CONCURRENT_CODEX_SESSIONS"""
