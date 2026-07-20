@@ -60,9 +60,8 @@ def build_external_codex_command(
     output_schema: str | Path,
     output_file: str | Path,
 ) -> list[str]:
-    return [
-        executable,
-        "exec",
+    global_options = ["--ask-for-approval", "never"]
+    exec_options = [
         "-C",
         str(Path(worktree).resolve()),
         "--ephemeral",
@@ -74,13 +73,17 @@ def build_external_codex_command(
         "memories.generate_memories=false",
         "--sandbox",
         "workspace-write",
-        "--ask-for-approval",
-        "never",
         "--json",
         "--output-schema",
         str(Path(output_schema).resolve()),
         "--output-last-message",
         str(Path(output_file).resolve()),
+    ]
+    return [
+        executable,
+        *global_options,
+        "exec",
+        *exec_options,
         "-",
     ]
 
@@ -89,17 +92,17 @@ def validate_external_command_shape(command: list[str], worktree: str | Path) ->
     if len(command) != 21:
         raise PayloadValidationError("external command argument count mismatch")
     expected_literals = {
-        1: "exec",
-        2: "-C",
-        4: "--ephemeral",
-        5: "--model",
-        7: "-c",
+        1: "--ask-for-approval",
+        2: "never",
+        3: "exec",
+        4: "-C",
+        6: "--ephemeral",
+        7: "--model",
         9: "-c",
-        10: "memories.generate_memories=false",
-        11: "--sandbox",
-        12: "workspace-write",
-        13: "--ask-for-approval",
-        14: "never",
+        11: "-c",
+        12: "memories.generate_memories=false",
+        13: "--sandbox",
+        14: "workspace-write",
         15: "--json",
         16: "--output-schema",
         18: "--output-last-message",
@@ -107,15 +110,17 @@ def validate_external_command_shape(command: list[str], worktree: str | Path) ->
     }
     if any(command[index] != value for index, value in expected_literals.items()):
         raise PayloadValidationError("external command literal or order mismatch")
-    if not re.fullmatch(r'model_reasoning_effort="(?:low|medium|high)"', command[8]):
+    if not re.fullmatch(r'model_reasoning_effort="(?:low|medium|high)"', command[10]):
         raise PayloadValidationError("external command reasoning effort mismatch")
-    if command[12] != "workspace-write":
+    if not command[8]:
+        raise PayloadValidationError("external command model mismatch")
+    if command[14] != "workspace-write":
         raise PayloadValidationError("external command sandbox mismatch")
-    if command[14] != "never":
+    if command[2] != "never":
         raise PayloadValidationError("external command approval mismatch")
     if "--add-dir" in command:
         raise PayloadValidationError("external command adds a writable directory")
-    if not same_path(command[3], worktree):
+    if not same_path(command[5], worktree):
         raise PayloadValidationError("external command working directory mismatch")
 
 

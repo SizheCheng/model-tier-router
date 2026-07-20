@@ -136,7 +136,7 @@ class RuntimeContractTests(unittest.TestCase):
 
     def test_nested_external_runner_refuses_before_preflight_or_fixture(self):
         closeout_path = ROOT / self.contract["reporting"]["closeout"]
-        self.assertFalse(closeout_path.exists())
+        original_bytes = closeout_path.read_bytes() if closeout_path.exists() else None
         rows = {
             100: {"pid": 100, "parent_pid": 90, "name": "powershell.exe"},
             90: {"pid": 90, "parent_pid": 0, "name": "codex.exe"},
@@ -149,21 +149,22 @@ class RuntimeContractTests(unittest.TestCase):
             executable_resolver=lambda: "fake-codex.exe",
             process_provider=lambda pid: rows.get(pid),
         )
-        try:
-            with patch(
-                "mtr_dogfood.external_runner._preflight",
-                side_effect=AssertionError("preflight must not run"),
-            ):
-                closeout, exit_code = runner.run()
-            self.assertEqual(exit_code, 2)
-            self.assertTrue(closeout["nested_codex_ancestor_detected"])
-            self.assertFalse(closeout["fixture_smoke"]["created"])
-            self.assertEqual(
-                closeout["hard_stop_code"], "NESTED_CODEX_ANCESTOR_DETECTED"
-            )
-            self.assertEqual(load_json(closeout_path), closeout)
-        finally:
-            closeout_path.unlink(missing_ok=True)
+        with patch(
+            "mtr_dogfood.external_runner._preflight",
+            side_effect=AssertionError("preflight must not run"),
+        ), patch("mtr_dogfood.external_runner.write_json") as writer:
+            closeout, exit_code = runner.run()
+        self.assertEqual(exit_code, 2)
+        self.assertTrue(closeout["nested_codex_ancestor_detected"])
+        self.assertFalse(closeout["fixture_smoke"]["created"])
+        self.assertEqual(
+            closeout["hard_stop_code"], "NESTED_CODEX_ANCESTOR_DETECTED"
+        )
+        writer.assert_called_once_with(closeout_path.resolve(), closeout)
+        if original_bytes is None:
+            self.assertFalse(closeout_path.exists())
+        else:
+            self.assertEqual(closeout_path.read_bytes(), original_bytes)
 
     def test_out_of_scope_repository_path_is_denied(self):
         value = copy.deepcopy(self.contract)

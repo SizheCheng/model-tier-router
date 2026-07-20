@@ -105,6 +105,8 @@
     "additional_writable_directories": [],
     "command_shape": [
       "codex",
+      "--ask-for-approval",
+      "never",
       "exec",
       "-C",
       "<EXACT_WORKTREE_OR_FIXTURE>",
@@ -117,8 +119,6 @@
       "memories.generate_memories=false",
       "--sandbox",
       "workspace-write",
-      "--ask-for-approval",
-      "never",
       "--json",
       "--output-schema",
       "<WORKTREE_LOCAL_SCHEMA>",

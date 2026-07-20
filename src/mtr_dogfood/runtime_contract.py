@@ -383,12 +383,13 @@ def validate_runtime_contract(value: Any) -> dict[str, Any]:
         "web_search": False,
         "additional_writable_directories": [],
         "command_shape": [
-            "codex", "exec", "-C", "<EXACT_WORKTREE_OR_FIXTURE>",
+            "codex", "--ask-for-approval", "never", "exec", "-C",
+            "<EXACT_WORKTREE_OR_FIXTURE>",
             "--ephemeral", "--model", "<MAPPED_MODEL>", "-c",
             'model_reasoning_effort="<MAPPED_REASONING_EFFORT>"',
             "-c", "memories.generate_memories=false", "--sandbox",
-            "workspace-write", "--ask-for-approval", "never", "--json",
-            "--output-schema", "<WORKTREE_LOCAL_SCHEMA>",
+            "workspace-write", "--json", "--output-schema",
+            "<WORKTREE_LOCAL_SCHEMA>",
             "--output-last-message", "<WORKTREE_LOCAL_FINAL_RESULT>", "-",
         ],
     }

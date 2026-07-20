@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,14 +10,34 @@ from pathlib import Path
 from mtr_dogfood.config import load_json
 from mtr_dogfood.external_runner import product_tasks_allowed
 from mtr_dogfood.process_ancestry import NestedCodexAncestorError
+from mtr_dogfood.r2_contract import PayloadValidationError
 from mtr_dogfood.runtime_contract import ProcessAccounting
 from mtr_dogfood.writable_smoke import (
+    build_external_codex_command,
     run_writable_smoke,
     validate_external_command_shape,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PARSER_FIXTURE = ROOT / "tests" / "fixtures" / "fake_codex_parser.py"
+
+
+def run_parser_fixture(command: list[str]) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [sys.executable, "-B", str(PARSER_FIXTURE), *command[1:]],
+        cwd=ROOT,
+        input=b"",
+        capture_output=True,
+        check=False,
+    )
+
+
+def old_invalid_order(command: list[str]) -> list[str]:
+    invalid = [command[0], *command[3:]]
+    insertion = invalid.index("workspace-write") + 1
+    invalid[insertion:insertion] = ["--ask-for-approval", "never"]
+    return invalid
 
 
 def successful_result():
@@ -38,6 +60,99 @@ class WritableSmokeTests(unittest.TestCase):
         self.contract = load_json(
             ROOT / "contracts" / "MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_RUNTIME.json"
         )
+
+    def test_builder_renders_global_and_exec_options_as_exact_argv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worktree = Path(directory) / "workspace with spaces" / "路径"
+            worktree.mkdir(parents=True)
+            schema = worktree / "schema folder" / "结果 schema.json"
+            output = worktree / "output folder" / "final 结果.json"
+            model = 'fixture-"quoted"-model'
+            command = build_external_codex_command(
+                "fake-codex.exe", worktree, model, "low", schema, output
+            )
+            self.assertEqual(
+                command,
+                [
+                    "fake-codex.exe", "--ask-for-approval", "never", "exec",
+                    "-C", str(worktree.resolve()), "--ephemeral", "--model",
+                    model, "-c", 'model_reasoning_effort="low"', "-c",
+                    "memories.generate_memories=false", "--sandbox",
+                    "workspace-write", "--json", "--output-schema",
+                    str(schema.resolve()), "--output-last-message",
+                    str(output.resolve()), "-",
+                ],
+            )
+            self.assertIsInstance(command, list)
+            self.assertTrue(all(isinstance(value, str) for value in command))
+            self.assertIn("\\", command[5])
+            self.assertIn("路径", command[5])
+            self.assertEqual(command[8], model)
+            validate_external_command_shape(command, worktree)
+
+    def test_synthetic_parser_rejects_old_order_and_accepts_repair(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worktree = Path(directory)
+            repaired = build_external_codex_command(
+                "fake-codex.exe", worktree, "fake-model", "low",
+                worktree / "schema.json", worktree / "result.json",
+            )
+            rejected = run_parser_fixture(old_invalid_order(repaired))
+            self.assertEqual(rejected.returncode, 2)
+            self.assertEqual(rejected.stdout, b"")
+            self.assertEqual(
+                rejected.stderr,
+                b"error: unexpected argument '--ask-for-approval' found\n",
+            )
+            accepted = run_parser_fixture(repaired)
+            self.assertEqual(accepted.returncode, 0)
+            self.assertEqual(accepted.stderr, b"")
+            self.assertFalse(accepted.stdout.startswith(b"\xef\xbb\xbf"))
+            payload = json.loads(accepted.stdout.decode("utf-8"))
+            self.assertTrue(payload["accepted"])
+            self.assertEqual(payload["argv"], repaired[1:])
+            self.assertEqual(payload["prompt_bytes_read"], 0)
+            self.assertEqual(payload["api_or_model_request_count"], 0)
+            self.assertEqual(payload["model_execution_count"], 0)
+            self.assertEqual(payload["attempts_consumed"], 0)
+
+    def test_command_validation_fails_closed_for_missing_and_unsupported_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worktree = Path(directory)
+            command = build_external_codex_command(
+                "fake-codex.exe", worktree, "fake-model", "low",
+                worktree / "schema.json", worktree / "result.json",
+            )
+            missing = command.copy()
+            missing.pop(2)
+            with self.assertRaises(PayloadValidationError):
+                validate_external_command_shape(missing, worktree)
+            unsupported = command.copy()
+            unsupported.insert(15, "--unsupported")
+            with self.assertRaises(PayloadValidationError):
+                validate_external_command_shape(unsupported, worktree)
+            completed = run_parser_fixture(unsupported)
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, b"")
+            self.assertTrue(completed.stderr.startswith(b"error: "))
+
+    def test_parser_fixture_preserves_accounting_and_is_not_real_codex(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worktree = Path(directory)
+            command = build_external_codex_command(
+                "fake-codex.exe", worktree, "fake-model", "medium",
+                worktree / "schema.json", worktree / "result.json",
+            )
+            budget = ProcessAccounting()
+            completed = run_parser_fixture(command)
+            self.assertEqual(completed.args[0], sys.executable)
+            self.assertNotEqual(Path(completed.args[0]).name.casefold(), "codex.exe")
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual(completed.stderr, b"")
+            self.assertEqual(budget.prelaunch_validation_attempted, 0)
+            self.assertEqual(budget.os_child_process_started, 0)
+            self.assertEqual(budget.model_execution_observed, 0)
+            self.assertEqual(budget.model_execution_completed, 0)
 
     def test_success_uses_fixture_local_transport_and_exact_one_start(self):
         captured = {}
