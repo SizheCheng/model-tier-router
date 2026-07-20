@@ -25,7 +25,7 @@ from .process_ancestry import (
     verify_standalone_powershell, windows_process_provider,
 )
 from .r2_contract import (
-    PayloadValidationError, classify_child_claim, final_output_valid,
+    PayloadValidationError, classify_model_reported_blocker, final_output_valid,
     validate_child_transport, validate_launch_payloads,
 )
 from .receipts import write_json
@@ -122,10 +122,10 @@ def classify_external_attempt(
     automated_acceptance: bool, forbidden_action: bool,
     confidentiality_ok: bool = True,
 ) -> str:
-    claim_failure = classify_child_claim(claim) if output_valid else None
+    claim_failure = (
+        classify_model_reported_blocker(claim) if output_valid else None
+    )
     infrastructure = _normalize_infrastructure(execution.get("infrastructure_failure_class"))
-    if claim_failure:
-        return claim_failure
     if int(execution.get("host_policy_failure_count") or 0) > 0:
         if infrastructure == "HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER":
             return infrastructure
@@ -142,6 +142,8 @@ def classify_external_attempt(
         return "CONFIDENTIALITY_BOUNDARY"
     if not execution.get("model_execution_observed"):
         return "ENVIRONMENT_FAILURE"
+    if claim_failure:
+        return claim_failure
     if not execution.get("model_execution_completed"):
         return "CONTEXT_OR_REASONING_INSUFFICIENT"
     if not changed:
@@ -811,7 +813,9 @@ def _run_attempt(
         infrastructure = _normalize_infrastructure(
             result.get("infrastructure_failure_class")
         )
-        claim_failure = classify_child_claim(claim) if output_valid else None
+        claim_failure = (
+            classify_model_reported_blocker(claim) if output_valid else None
+        )
         validation_results: list[dict[str, Any]] = []
         may_validate = bool(
             result.get("child_process_started")
@@ -1047,6 +1051,10 @@ def execute_lane(
 
 def product_tasks_allowed(smoke: dict[str, Any]) -> bool:
     return bool(smoke.get("accepted"))
+
+
+def next_product_lane_allowed(lanes: list[dict[str, Any]]) -> bool:
+    return not lanes or bool(lanes[-1].get("accepted"))
 
 
 def _usage_totals(lanes: list[dict[str, Any]], smoke: dict[str, Any]) -> dict[str, int | None]:
@@ -1464,19 +1472,22 @@ class ExternalRunner:
 
         lane_error = ""
         for descriptor in contract["cases"]:
+            if not next_product_lane_allowed(lanes):
+                break
             try:
-                lanes.append(
-                    execute_lane(
-                        contract,
-                        descriptor,
-                        budget,
-                        self.launcher,
-                        self._guard,
-                        self.executable_resolver,
-                        self.root,
-                        assessor=self.assessor,
-                    )
+                lane = execute_lane(
+                    contract,
+                    descriptor,
+                    budget,
+                    self.launcher,
+                    self._guard,
+                    self.executable_resolver,
+                    self.root,
+                    assessor=self.assessor,
                 )
+                lanes.append(lane)
+                if not lane["accepted"]:
+                    lane_error = str(lane["final_status"])
             except (ContractError, GitContractError, RuntimeError) as exc:
                 lane_error = str(exc) if str(exc).isupper() else "PRODUCT_LANE_FAILED"
                 break

@@ -222,6 +222,37 @@ def classify_child_claim(value: dict[str, Any]) -> str | None:
     return None
 
 
+def classify_model_reported_blocker(value: dict[str, Any]) -> str | None:
+    """Classify a valid child blocker without treating it as an authorization breach."""
+    if value.get("status") not in {"blocked", "failed"}:
+        return None
+    host_policy = classify_child_claim(value)
+    if host_policy is not None:
+        return host_policy
+    text = " ".join(
+        [
+            str(value.get("summary", "")),
+            *[str(item) for item in value.get("notes", [])],
+        ]
+    )
+    if re.search(
+        r"required (?:input|fixture|file)(?: file)? (?:is )?missing|missing required "
+        r"(?:input|fixture|file)|cannot find (?:the )?required "
+        r"(?:input|fixture|file)",
+        text,
+        re.I,
+    ):
+        return "REQUIRED_INPUT_MISSING"
+    if re.search(
+        r"contradictory|internally inconsistent|conflicting (?:task )?authority|"
+        r"authority (?:is )?ambiguous",
+        text,
+        re.I,
+    ):
+        return "TASK_CONTRACT_AMBIGUOUS"
+    return "MODEL_REPORTED_BLOCKED"
+
+
 def assert_control_action_allowed(action: str) -> None:
     if action in {"rerun", "merge", "modify"}:
         raise RuntimeError("UNAUTHORIZED_CONTROL_RERUN_OR_MERGE")

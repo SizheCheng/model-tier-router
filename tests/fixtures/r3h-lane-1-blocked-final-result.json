@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "document-advisory-private-executor-integration",
+  "status": "blocked",
+  "summary": "Could not create the two allowed files: the required apply_patch editor failed with “Failed to write file” for docs/dogfood-automation.md despite the assigned worktree being present and writable by ACL.",
+  "changed_paths": [],
+  "tests_run": [
+    {
+      "command": "python -B -m unittest discover -s tests/integrations -p test_dogfood_automation.py -v",
+      "status": "not_run"
+    },
+    {
+      "command": "python -B -m unittest discover -s tests -v",
+      "status": "not_run"
+    },
+    {
+      "command": "python -B -c \"from pathlib import Path; p=Path('docs/dogfood-automation.md'); t=p.read_text(encoding='utf-8'); assert 'execution_authorized' in t; assert 'authorized_write_scope' in t; assert 'separate' in t.lower() and 'authority' in t.lower()\"",
+      "status": "not_run"
+    }
+  ],
+  "prohibited_action_attempted": false,
+  "notes": [
+    "No repository files were changed.",
+    "No prohibited network, Git mutation, external-path, credential, plugin, browser, or subagent actions were used."
+  ]
+}

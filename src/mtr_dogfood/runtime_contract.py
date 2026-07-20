@@ -20,6 +20,9 @@ ELIGIBLE_FAILURES = {
     "CONTEXT_OR_REASONING_INSUFFICIENT",
 }
 NEVER_ESCALATE_FAILURES = {
+    "MODEL_REPORTED_BLOCKED",
+    "REQUIRED_INPUT_MISSING",
+    "TASK_CONTRACT_AMBIGUOUS",
     "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS",
     "HOST_POLICY_REJECTED_EXTERNAL_CODE_TRANSFER",
     "NESTED_CODEX_ANCESTOR_DETECTED",
@@ -35,6 +38,9 @@ NEVER_ESCALATE_FAILURES = {
     "UNAUTHORIZED_ACTION",
 }
 PROFILE_SEQUENCE = ("economy", "balanced", "premium")
+TERMINALLY_INCOMPLETE_INSUFFICIENT_SEQUENCE_CAPACITY = (
+    "TERMINALLY_INCOMPLETE_INSUFFICIENT_SEQUENCE_CAPACITY"
+)
 
 
 @dataclass
@@ -450,6 +456,29 @@ def next_escalation_profile(
     return entry.get("next") if isinstance(entry, dict) else None
 
 
+def classify_campaign_capacity(
+    ceiling: int, consumed_starts: int, starts_required: int
+) -> dict[str, Any]:
+    if min(ceiling, consumed_starts, starts_required) < 0:
+        raise ContractError("campaign capacity values must be non-negative")
+    if consumed_starts > ceiling:
+        raise ContractError("campaign consumed starts exceed ceiling")
+    remaining = ceiling - consumed_starts
+    possible = starts_required <= remaining
+    return {
+        "ceiling": ceiling,
+        "consumed_starts": consumed_starts,
+        "unused_nominal_capacity": remaining,
+        "starts_required_to_complete_remaining_sequence": starts_required,
+        "completion_possible_under_existing_ceiling": possible,
+        "terminal_classification": (
+            None
+            if possible
+            else TERMINALLY_INCOMPLETE_INSUFFICIENT_SEQUENCE_CAPACITY
+        ),
+    }
+
+
 def assert_control_action_allowed(action: str) -> None:
     if action in {"rerun", "merge", "modify"}:
         raise RuntimeError("UNAUTHORIZED_CONTROL_RERUN_OR_MERGE")
@@ -469,6 +498,7 @@ __all__ = [
     "ProcessAccounting",
     "RUNTIME_ROUTE_ID",
     "assert_control_action_allowed",
+    "classify_campaign_capacity",
     "load_runtime_contract",
     "next_escalation_profile",
     "validate_closeout",
