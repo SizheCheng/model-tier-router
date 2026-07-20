@@ -1,0 +1,16 @@
+{
+  "event_index": 2,
+  "byte_start": 101,
+  "byte_end": 451,
+  "event": {
+    "type": "item.started",
+    "item": {
+      "id": "item_0",
+      "type": "command_execution",
+      "command": "\"C:\\\\Users\\\\sizhe\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command \"Get-ChildItem -Force; if (Test-Path -LiteralPath 'smoke') { Get-ChildItem -Force -LiteralPath 'smoke' }\""
+    }
+  },
+  "legacy_first_candidate": "C:\\Users\\sizhe\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe",
+  "legacy_scanner_line": 1043,
+  "legacy_scanner_rule": "absolute Windows path candidate not contained by disposable workspace"
+}
