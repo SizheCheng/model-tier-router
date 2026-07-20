@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "source_path": "raw/writable_smoke/r3f-2-9f08715fcc7f45a9a062bbec6209bb46/codex-events.jsonl",
+  "source_sha256": "4ef0e952d99c0d6b79818a3559a00ee41e366e620ae57a3ba4c0e382b5578b77",
+  "verified_cwd": "C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3f-post-scanner-repair-external-packet-r1\\results\\r3f-result-20260720T1215321694314Z-32400\\workspaces\\writable_smoke\\attempt-1",
+  "decoded_command": "\"C:\\\\Users\\\\sizhe\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command \"New-Item -ItemType File -Path .\\\\smoke\\\\result.txt -Force | Out-Null\"",
+  "pre_repair_extraction_input": "-Command \"New-Item -ItemType File -Path .\\\\smoke\\\\result.txt -Force | Out-Null\"",
+  "decoded_shell_payload": "New-Item -ItemType File -Path .\\\\smoke\\\\result.txt -Force | Out-Null",
+  "original_path_operand": ".\\\\smoke\\\\result.txt",
+  "legacy_candidate": "\\\\smoke\\\\result.txt",
+  "legacy_candidate_offset": 41,
+  "expected_normalized_path": "smoke\\result.txt",
+  "expected_access_mode": "create",
+  "events": [
+    {
+      "event_index": 10,
+      "byte_start": 2731,
+      "byte_end": 3050,
+      "raw_json_sha256": "5841d40097384e7f16230a1413d135c222e2451838ee2bb382b33cfe14627414",
+      "event": {
+        "type": "item.started",
+        "item": {
+          "id": "item_4",
+          "type": "command_execution",
+          "command": "\"C:\\\\Users\\\\sizhe\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command \"New-Item -ItemType File -Path .\\\\smoke\\\\result.txt -Force | Out-Null\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      }
+    },
+    {
+      "event_index": 11,
+      "byte_start": 3051,
+      "byte_end": 3367,
+      "raw_json_sha256": "6048b23711ddcd5afa2e3b379eaca9be9def15191cdafe39516857a9465808eb",
+      "event": {
+        "type": "item.completed",
+        "item": {
+          "id": "item_4",
+          "type": "command_execution",
+          "command": "\"C:\\\\Users\\\\sizhe\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command \"New-Item -ItemType File -Path .\\\\smoke\\\\result.txt -Force | Out-Null\"",
+          "aggregated_output": "",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      }
+    }
+  ]
+}

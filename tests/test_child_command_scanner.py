@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -12,12 +13,14 @@ from mtr_dogfood.external_runner import (
     _extract_windows_paths,
     _normalized_windows_path,
     _scan_child_commands,
+    _windows_path_kind,
 )
 from mtr_dogfood.runtime_contract import ProcessAccounting
 
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "r3d-unauthorized-action-event.json"
+R3F_FIXTURE = ROOT / "tests" / "fixtures" / "r3f-workspace-relative-path-events.json"
 PWSH = r"C:\Users\sizhe\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
 
 
@@ -78,7 +81,191 @@ class ChildCommandScannerTests(unittest.TestCase):
         record = scan["command_records"][0]
         self.assertEqual(record["event_index"], 0)
         self.assertEqual(record["executable_paths"][0]["access_mode"], "execute")
-        self.assertEqual(record["path_candidates"], [])
+        self.assertTrue(record["path_candidates"])
+        self.assertTrue(all(
+            candidate["inside_worktree"] for candidate in record["path_candidates"]
+        ))
+
+    def test_exact_r3f_events_bind_trigger_and_resolve_against_verified_cwd(self):
+        fixture = json.loads(R3F_FIXTURE.read_text(encoding="utf-8"))
+        raw_lines = []
+        for entry in fixture["events"]:
+            raw = json.dumps(entry["event"], separators=(",", ":"))
+            self.assertEqual(
+                hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+                entry["raw_json_sha256"],
+            )
+            self.assertEqual(
+                entry["event"]["item"]["command"], fixture["decoded_command"]
+            )
+            raw_lines.append(raw)
+
+        legacy_input = fixture["pre_repair_extraction_input"]
+        offset = fixture["legacy_candidate_offset"]
+        legacy = fixture["legacy_candidate"]
+        self.assertEqual(legacy_input[offset : offset + len(legacy)], legacy)
+        self.assertEqual(legacy_input[offset - 1], ".")
+        self.assertFalse(any(
+            candidate == legacy
+            for candidate, _ in _extract_windows_paths(legacy_input)
+        ))
+
+        self.events.write_text(
+            "{}\n" * 10 + "\n".join(raw_lines) + "\n", encoding="utf-8"
+        )
+        cwd = Path(fixture["verified_cwd"])
+        scan = _scan_child_commands(self.events, [], cwd)
+        self.assertFalse(scan["external_path_access_detected"])
+        self.assertEqual(
+            [record["event_index"] for record in scan["command_records"]], [10, 11]
+        )
+        expected = str((cwd / "smoke" / "result.txt").resolve(strict=False))
+        for record in scan["command_records"]:
+            self.assertEqual(record["shell_string"], fixture["decoded_shell_payload"])
+            self.assertEqual(len(record["path_candidates"]), 1)
+            candidate = record["path_candidates"][0]
+            self.assertEqual(candidate["raw"], fixture["original_path_operand"])
+            self.assertEqual(candidate["normalized"], fixture["expected_normalized_path"])
+            self.assertEqual(candidate["path_kind"], "relative")
+            self.assertEqual(candidate["cwd_resolved"], expected)
+            self.assertEqual(candidate["canonical"], expected)
+            self.assertEqual(candidate["access_mode"], fixture["expected_access_mode"])
+            self.assertTrue(candidate["inside_worktree"])
+
+    def test_windows_path_kind_taxonomy(self):
+        cases = {
+            r"smoke\result.txt": "relative",
+            r".\smoke\result.txt": "relative",
+            r"..\escape.txt": "parent_relative",
+            r".\..\escape.txt": "parent_relative",
+            r"\rooted.txt": "current_drive_rooted",
+            r"C:drive-relative.txt": "drive_relative",
+            r"C:\absolute.txt": "drive_absolute",
+            r"\\server\share\file.txt": "unc",
+            r"\\?\C:\absolute.txt": "extended_absolute",
+            r"\\?\UNC\server\share\file.txt": "extended_unc",
+            "/workspace/style/path": "posix_absolute",
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(_windows_path_kind(value), expected)
+
+    def test_relative_path_forms_resolve_inside_cwd(self):
+        cases = (
+            r"smoke\result.txt",
+            r".\smoke\result.txt",
+            r"folder with spaces\result file.txt",
+            r"相对目录\结果.txt",
+        )
+        for relative in cases:
+            with self.subTest(relative=relative):
+                scan = self.scan_command(
+                    powershell(f"Get-Content -LiteralPath '{relative}'")
+                )
+                self.assertFalse(scan["external_path_access_detected"])
+                candidate = scan["command_records"][0]["path_candidates"][0]
+                self.assertTrue(candidate["inside_worktree"])
+                self.assertEqual(candidate["path_kind"], "relative")
+
+    def test_non_relative_windows_path_kinds_fail_closed(self):
+        cases = (
+            (r"\rooted.txt", "current_drive_rooted"),
+            (r"C:drive-relative.txt", "drive_relative"),
+            (r"C:\external\file.txt", "drive_absolute"),
+            (r"\\server\share\file.txt", "unc"),
+            (r"\\?\C:\external\file.txt", "extended_absolute"),
+            (r"\\?\UNC\server\share\file.txt", "extended_unc"),
+            ("/workspace/style/path", "posix_absolute"),
+        )
+        for path, kind in cases:
+            with self.subTest(path=path):
+                raw_event = {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "transport",
+                        "type": "command_execution",
+                        "command": powershell(f"Get-Content -LiteralPath '{path}'"),
+                    },
+                }
+                transport = json.dumps(raw_event)
+                decoded = json.loads(transport)
+                self.assertEqual(decoded, raw_event)
+                scan = self.scan_event(decoded)
+                self.assertTrue(scan["external_path_access_detected"])
+                candidate = scan["command_records"][0]["path_candidates"][0]
+                self.assertEqual(candidate["path_kind"], kind)
+                self.assertFalse(candidate["inside_worktree"])
+
+    def test_parent_relative_variants_are_rejected(self):
+        for path in (r"..\escape.txt", r".\..\escape.txt"):
+            with self.subTest(path=path):
+                scan = self.scan_command(
+                    powershell(f"Get-Content -LiteralPath '{path}'")
+                )
+                self.assertTrue(scan["external_path_access_detected"])
+                self.assertEqual(
+                    scan["command_records"][0]["path_candidates"][0]["path_kind"],
+                    "parent_relative",
+                )
+
+    def test_json_transport_decodes_once_and_true_unc_remains_unc(self):
+        command = powershell(r"Get-Content -LiteralPath '\\server\share\file.txt'")
+        encoded = json.dumps({"command": command})
+        decoded = json.loads(encoded)["command"]
+        self.assertEqual(decoded, command)
+        scan = self.scan_command(decoded)
+        candidate = scan["command_records"][0]["path_candidates"][0]
+        self.assertEqual(candidate["raw"], r"\\server\share\file.txt")
+        self.assertEqual(candidate["path_kind"], "unc")
+        self.assertTrue(scan["external_path_access_detected"])
+
+    def test_repeated_backslashes_in_non_path_text_are_not_rewritten(self):
+        literal = r"literal\\name.txt"
+        scan = self.scan_command(powershell(f"Write-Output '{literal}'"))
+        self.assertFalse(scan["external_path_access_detected"])
+        self.assertEqual(scan["command_records"][0]["path_candidates"], [])
+        self.assertIn(literal, scan["command_records"][0]["shell_string"])
+
+    def test_structured_event_fields_take_precedence_over_display_command(self):
+        event = {
+            "type": "item.completed",
+            "item": {
+                "id": "structured",
+                "type": "command_execution",
+                "command": powershell(
+                    r"Get-Content -LiteralPath '\\server\share\display-only.txt'"
+                ),
+                "executable": PWSH,
+                "argv": [
+                    "-Command",
+                    r"Get-Content -LiteralPath '.\smoke\structured.txt'",
+                ],
+                "cwd": str(self.worktree),
+            },
+        }
+        scan = self.scan_event(event)
+        self.assertFalse(scan["external_path_access_detected"])
+        record = scan["command_records"][0]
+        self.assertEqual(record["command_source"], "structured_event")
+        self.assertTrue(record["event_cwd_verified"])
+        self.assertEqual(record["path_candidates"][0]["path_kind"], "relative")
+        self.assertTrue(record["path_candidates"][0]["inside_worktree"])
+
+    def test_structured_event_cwd_mismatch_fails_closed(self):
+        event = {
+            "type": "item.completed",
+            "item": {
+                "id": "mismatched-cwd",
+                "type": "command_execution",
+                "executable": PWSH,
+                "argv": ["-Command", "Get-Content -LiteralPath 'smoke.txt'"],
+                "cwd": str(self.root / "outside"),
+            },
+        }
+        scan = self.scan_event(event)
+        self.assertTrue(scan["external_path_access_detected"])
+        self.assertTrue(scan["unparseable_command_detected"])
+        self.assertFalse(scan["command_records"][0]["event_cwd_verified"])
 
     def test_external_file_read_is_rejected(self):
         self.assert_external_mode("Get-Content -LiteralPath '{path}'", "read")
@@ -136,7 +323,9 @@ class ChildCommandScannerTests(unittest.TestCase):
         record = scan["command_records"][0]
         self.assertEqual(record["executable"], PWSH)
         self.assertEqual(record["executable_paths"][0]["access_mode"], "execute")
-        self.assertEqual(record["path_candidates"], [])
+        self.assertEqual(len(record["path_candidates"]), 1)
+        self.assertEqual(record["path_candidates"][0]["raw"], "smoke")
+        self.assertTrue(record["path_candidates"][0]["inside_worktree"])
 
     def test_workspace_local_absolute_and_relative_paths_are_accepted(self):
         local = self.worktree / "smoke" / "result.txt"

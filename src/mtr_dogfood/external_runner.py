@@ -10,7 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 
 from .codex_runner import resolve_codex_executable, run_codex
@@ -57,9 +57,13 @@ REMOTE_OPERATION_RE = re.compile(r"\bgit(?:\.exe)?\s+(push|fetch|pull|remote)\b"
 WINDOWS_PATH_RE = re.compile(
     r'''(?P<double>"(?:[a-z]:[\\/]|\\\\[^\\/\s"]+[\\/])[^"]+")'''
     r'''|(?P<single>'(?:[a-z]:[\\/]|\\\\[^\\/\s']+[\\/])[^']+')'''
-    r'''|(?P<bare>(?:\b[a-z]:[\\/]|(?<![\w\\])\\\\[^\\/\s"']+[\\/])'''
+    r'''|(?P<bare>(?:\b[a-z]:[\\/]|(?<![\w.\\])\\\\[^\\/\s"']+[\\/])'''
     r'''[^\s"'<>|,;(){}\[\]]+)''',
     re.I,
+)
+POWERSHELL_PATH_ARGUMENT_RE = re.compile(
+    r'''(?ix)(?<!\S)-(?:literal)?path\s+'''
+    r'''(?P<value>"[^"\r\n]*"|'[^'\r\n]*'|[^\s|;&]+)''',
 )
 CONFIDENTIAL_CONTENT_RE = re.compile(
     rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
@@ -205,12 +209,67 @@ def _extract_windows_paths(text: str) -> list[tuple[str, int]]:
     return paths
 
 
+def _extract_powershell_path_operands(text: str) -> list[tuple[str, int]]:
+    """Extract only explicit PowerShell -Path/-LiteralPath argument values."""
+    paths: list[tuple[str, int]] = []
+    for match in POWERSHELL_PATH_ARGUMENT_RE.finditer(text):
+        raw = match.group("value")
+        candidate = _strip_matching_quotes(raw)
+        paths.append((candidate, match.start("value")))
+    return paths
+
+
 def _normalized_windows_path(path: str) -> str:
     return ntpath.normpath(path.replace("/", "\\"))
 
 
+def _windows_path_kind(path: str) -> str:
+    """Classify Windows syntax before choosing a base for resolution."""
+    value = _strip_matching_quotes(path)
+    if value.startswith("/") and not value.startswith("//"):
+        return "posix_absolute"
+    windows = value.replace("/", "\\")
+    folded = windows.casefold()
+    if folded.startswith("\\\\?\\unc\\"):
+        return "extended_unc"
+    if folded.startswith("\\\\?\\"):
+        return "extended_absolute"
+    if windows.startswith("\\\\"):
+        return "unc"
+    drive, tail = ntpath.splitdrive(windows)
+    if drive:
+        return "drive_absolute" if tail.startswith("\\") else "drive_relative"
+    if windows.startswith("\\"):
+        return "current_drive_rooted"
+    normalized = _normalized_windows_path(windows)
+    if normalized == ".." or normalized.startswith("..\\"):
+        return "parent_relative"
+    return "relative"
+
+
 def _canonical_path(path: str | Path) -> str:
     return str(Path(path).resolve(strict=False))
+
+
+def _resolve_windows_path_candidate(
+    candidate: str, worktree: Path | None
+) -> tuple[str, str, str | None, Path | None]:
+    """Return kind, normalized form, cwd-resolved form, and safe local Path."""
+    kind = _windows_path_kind(candidate)
+    normalized = _normalized_windows_path(candidate)
+    if kind in {"relative", "parent_relative"}:
+        if worktree is None:
+            return kind, normalized, None, None
+        resolved = worktree.joinpath(*PureWindowsPath(normalized).parts).resolve(
+            strict=False
+        )
+        return kind, normalized, str(resolved), resolved
+    if kind == "drive_absolute":
+        resolved = Path(normalized).resolve(strict=False)
+        return kind, normalized, str(resolved), resolved
+    # Rooted, drive-relative, UNC, extended, and POSIX-absolute syntax is
+    # deliberately not rebound to the workspace cwd.
+    return kind, normalized, None, None
 
 
 def _path_access_mode(text: str, offset: int) -> str:
@@ -240,6 +299,20 @@ def _shell_string(executable: str, operand_text: str) -> str | None:
     return _strip_matching_quotes(match.group(1)) if match else None
 
 
+def _structured_shell_string(executable: str, argv: list[str]) -> str | None:
+    name = ntpath.basename(executable).casefold()
+    if name not in {
+        "pwsh", "pwsh.exe", "powershell", "powershell.exe",
+        "cmd", "cmd.exe", "sh", "sh.exe", "bash", "bash.exe",
+    }:
+        return None
+    for index, argument in enumerate(argv):
+        if argument.casefold() in {"-command", "-c", "/c"}:
+            payload = argv[index + 1 :]
+            return " ".join(payload) if payload else None
+    return None
+
+
 def _scan_child_commands(
     events_path: Path,
     forbidden_paths: list[str | Path],
@@ -264,32 +337,69 @@ def _scan_child_commands(
         except json.JSONDecodeError:
             continue
         item = event.get("item")
-        command = item.get("command") if isinstance(item, dict) else None
-        if not isinstance(command, str):
+        if not isinstance(item, dict):
             continue
-        executable, argv, operand_text, parsed = _split_child_command(command)
+        display_command = item.get("command")
+        structured_executable = item.get("executable")
+        structured_argv = item.get("argv")
+        structured = bool(
+            isinstance(structured_executable, str)
+            and isinstance(structured_argv, list)
+            and all(isinstance(argument, str) for argument in structured_argv)
+        )
+        if structured:
+            executable = structured_executable
+            argv = list(structured_argv)
+            operand_text = subprocess.list2cmdline(argv)
+            parsed = True
+            command_source = "structured_event"
+            inspection_text = subprocess.list2cmdline([executable, *argv])
+            command = (
+                display_command
+                if isinstance(display_command, str)
+                else inspection_text
+            )
+            shell = _structured_shell_string(executable, argv)
+        elif isinstance(display_command, str):
+            command = display_command
+            executable, argv, operand_text, parsed = _split_child_command(command)
+            command_source = "display_command_fallback"
+            inspection_text = command
+            shell = _shell_string(executable, operand_text)
+        else:
+            continue
         executable_name = ntpath.basename(executable).casefold()
+        inspection_payload = shell if shell is not None else operand_text
         git_action = (
             argv[0].casefold()
             if executable_name in {"git", "git.exe"} and argv
             else ""
         )
-        if FORBIDDEN_ACTION_RE.search(command) or git_action in {
+        if FORBIDDEN_ACTION_RE.search(inspection_text) or git_action in {
             "commit", "merge", "rebase", "reset", "clean", "push", "remote",
             "tag", "stash",
         }:
             result["forbidden_action_detected"] = True
-        if REMOTE_OPERATION_RE.search(command) or git_action in {
+        if REMOTE_OPERATION_RE.search(inspection_text) or git_action in {
             "push", "fetch", "pull", "remote",
         }:
             result["remote_operation_attempted"] = True
-        if CREDENTIAL_ACCESS_RE.search(operand_text):
+        if CREDENTIAL_ACCESS_RE.search(inspection_payload):
             result["credential_access_detected"] = True
         if not parsed:
             result["unparseable_command_detected"] = True
             result["external_path_access_detected"] = True
-        if re.search(r"(?<![\w.])\.\.([\\/]|$)", operand_text):
+        if re.search(r"(?<![\w.])\.\.([\\/]|$)", inspection_payload):
             result["external_path_access_detected"] = True
+        event_cwd = item.get("cwd")
+        event_cwd_verified = None
+        if isinstance(event_cwd, str):
+            event_cwd_verified = bool(
+                worktree is not None and same_path(event_cwd, worktree)
+            )
+            if not event_cwd_verified:
+                result["unparseable_command_detected"] = True
+                result["external_path_access_detected"] = True
 
         executable_paths = []
         if re.match(r"(?i)^(?:[a-z]:[\\/]|\\\\)", executable):
@@ -299,28 +409,53 @@ def _scan_child_commands(
                 "canonical": _canonical_path(executable),
                 "access_mode": "execute",
             })
+        path_input = shell if shell is not None else operand_text
+        extracted = [
+            (candidate, offset, "powershell_path_argument")
+            for candidate, offset in _extract_powershell_path_operands(path_input)
+        ]
+        extracted.extend(
+            (candidate, offset, "absolute_path_fallback")
+            for candidate, offset in _extract_windows_paths(path_input)
+        )
         candidates = []
-        for candidate, offset in _extract_windows_paths(operand_text):
-            canonical = Path(candidate).resolve(strict=False)
+        seen_candidates: set[tuple[str, int]] = set()
+        for candidate, offset, source in extracted:
+            key = (candidate.casefold(), offset)
+            if key in seen_candidates:
+                continue
+            seen_candidates.add(key)
+            path_kind, normalized, cwd_resolved, canonical_path = (
+                _resolve_windows_path_candidate(candidate, worktree)
+            )
             inside_worktree = bool(
-                worktree is not None and is_contained(worktree, canonical)
+                worktree is not None
+                and canonical_path is not None
+                and is_contained(worktree, canonical_path)
             )
             protected_root = next(
-                (str(path) for path in protected if is_contained(path, canonical)),
+                (
+                    str(path)
+                    for path in protected
+                    if canonical_path is not None
+                    and is_contained(path, canonical_path)
+                ),
                 None,
             )
             candidates.append({
                 "raw": candidate,
-                "normalized": _normalized_windows_path(candidate),
-                "canonical": str(canonical),
-                "access_mode": _path_access_mode(operand_text, offset),
+                "normalized": normalized,
+                "path_kind": path_kind,
+                "cwd_resolved": cwd_resolved,
+                "canonical": cwd_resolved if cwd_resolved is not None else normalized,
+                "access_mode": _path_access_mode(path_input, offset),
+                "extraction_source": source,
                 "inside_worktree": inside_worktree,
                 "protected_root": protected_root,
             })
             if worktree is None or not inside_worktree:
                 result["external_path_access_detected"] = True
 
-        shell = _shell_string(executable, operand_text)
         shell_name = executable_name in {
             "pwsh", "pwsh.exe", "powershell", "powershell.exe",
             "cmd", "cmd.exe", "sh", "sh.exe", "bash", "bash.exe",
@@ -331,11 +466,14 @@ def _scan_child_commands(
         result["command_records"].append({
             "event_index": event_index,
             "event_type": event.get("type"),
-            "item_type": item.get("type") if isinstance(item, dict) else None,
+            "item_type": item.get("type"),
             "raw_command": command,
+            "command_source": command_source,
             "executable": executable,
             "argv": argv,
             "shell_string": shell,
+            "event_cwd": event_cwd if isinstance(event_cwd, str) else None,
+            "event_cwd_verified": event_cwd_verified,
             "cwd": (
                 str(worktree.resolve(strict=False))
                 if worktree is not None
