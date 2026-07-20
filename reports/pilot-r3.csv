@@ -1,0 +1,1 @@
+case_id,attempt,profile,accepted,failure_class,child_process_started,model_execution_observed,input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens,target_commit,automatic_merge
