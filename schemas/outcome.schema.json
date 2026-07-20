@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "case_id", "commit_created", "commit_oid", "branch", "auto_merged", "merge_oid", "human_review_state", "human_accepted", "rework_required", "rollback_within_7_days"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "case_id": {"type": "string"},
+    "commit_created": {"type": "boolean"},
+    "commit_oid": {"type": ["string", "null"]},
+    "branch": {"type": "string"},
+    "auto_merged": {"type": "boolean"},
+    "merge_oid": {"type": ["string", "null"]},
+    "human_review_state": {"type": "string"},
+    "human_accepted": {"type": ["boolean", "null"]},
+    "rework_required": {"type": ["boolean", "null"]},
+    "rollback_within_7_days": {"type": ["boolean", "null"]}
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_id", "case_id", "target_repository", "baseline_head", "allowed_worktree", "allowed_task", "allowed_validation", "allowed_commit_behavior", "external_push_authorized", "known_external_sessions_declared_active"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "contract_id": {"type": "string"},
+    "case_id": {"type": "string"},
+    "target_repository": {"type": "string"},
+    "baseline_head": {"type": "string"},
+    "allowed_worktree": {"type": "string"},
+    "allowed_task": {"type": "string"},
+    "allowed_validation": {"type": "array", "items": {"type": "string"}},
+    "allowed_commit_behavior": {"type": "string"},
+    "external_push_authorized": {"const": false},
+    "known_external_sessions_declared_active": {"type": "boolean"}
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "mapping_version": "2026-07-19-r1",
+  "logical_profiles": {
+    "economy": {
+      "codex_model": "gpt-5.6-luna",
+      "model_reasoning_effort": "low",
+      "next_escalation_profile": "balanced"
+    },
+    "balanced": {
+      "codex_model": "gpt-5.6-terra",
+      "model_reasoning_effort": "medium",
+      "next_escalation_profile": "premium"
+    },
+    "premium": {
+      "codex_model": "gpt-5.6-sol",
+      "model_reasoning_effort": "high",
+      "next_escalation_profile": null
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "task", "authority", "decision", "execution", "validation", "outcome", "concurrency"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "task": {"type": "object"},
+    "authority": {"type": "object"},
+    "decision": {"type": "object"},
+    "execution": {"type": "object"},
+    "validation": {"type": "object"},
+    "outcome": {"type": "object"},
+    "concurrency": {"type": "object"}
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "case_id", "baseline_passed", "focused_tests_passed", "full_tests_passed", "artifact_checks_passed", "changed_paths_allowed", "unrelated_paths_changed", "forbidden_action_detected", "automated_acceptance"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "case_id": {"type": "string"},
+    "baseline_passed": {"type": "boolean"},
+    "focused_tests_passed": {"type": ["boolean", "null"]},
+    "full_tests_passed": {"type": ["boolean", "null"]},
+    "artifact_checks_passed": {"type": ["boolean", "null"]},
+    "changed_paths_allowed": {"type": "boolean"},
+    "unrelated_paths_changed": {"type": "boolean"},
+    "forbidden_action_detected": {"type": "boolean"},
+    "automated_acceptance": {"type": "boolean"}
+  }
+}

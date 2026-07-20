@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0.0",
+  "worktree_pool": "C:/Users/sizhe/Documents/model-tier-router-dogfood-worktrees",
+  "router_repository": "C:/Users/sizhe/Documents/model-tier-router",
+  "repositories": {
+    "model-tier-router": {
+      "path": "C:/Users/sizhe/Documents/model-tier-router",
+      "branch": "main",
+      "baseline_head": "a455debff9a01faa5481cb8a6ca98e31e29ec52a"
+    },
+    "canonical-memories": {
+      "path": "C:/Users/sizhe/Documents/canonical-memories",
+      "branch": "main",
+      "baseline_head": "dda5caf4cfdad906f772b646d5bb2df562d5c37b"
+    },
+    "qwen-redaction-standalone": {
+      "path": "C:/Users/sizhe/Documents/qwen-redaction-standalone",
+      "branch": "qwen-redaction-r1",
+      "baseline_head": "bbb1bd68882aeb735f29c448b00a5c21783b355f"
+    },
+    "shortage-B": {
+      "path": "C:/Users/sizhe/Documents/shortage-B",
+      "branch": "master",
+      "baseline_head": "2958ef3d378bc9b5825c28550af628d0a0d787e7"
+    }
+  },
+  "known_external_repositories": {
+    "qwen": "C:/Users/sizhe/Documents/qwen",
+    "trading-authority-OS": "C:/Users/sizhe/Documents/trading-authority-OS"
+  },
+  "denylist": [
+    "C:/Users/sizhe/Documents/model-tier-router-public",
+    "C:/Users/sizhe/Documents/qwen",
+    "C:/Users/sizhe/Documents/trading-authority-OS"
+  ],
+  "commit_identity": {
+    "name": "SizheCheng",
+    "email": "286442303+SizheCheng@users.noreply.github.com"
+  }
+}

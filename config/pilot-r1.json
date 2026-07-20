@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0.0",
+  "route_id": "MODEL_TIER_ROUTER_CROSS_PRODUCT_AUTOMATED_DOGFOOD_R1_CONCURRENT_SAFE",
+  "maximum_child_codex_exec_invocations": 9,
+  "maximum_escalations_per_router_arm": 1,
+  "cases": []
+}

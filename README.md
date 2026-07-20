@@ -1,0 +1,46 @@
+# Model Tier Router Dogfood Harness
+
+Private, local-only automation for exercising the advisory
+`model-tier-router` against real development tasks in isolated Git worktrees.
+The Router recommends a logical capability profile; the current user contract
+remains the only execution authority.
+
+The harness never pushes, publishes, deploys, delivers customer artifacts, or
+contacts model providers other than the explicitly requested `codex exec`
+invocation. Raw JSONL, command output, diffs, and process diagnostics stay under
+the ignored `runs/raw/` tree. Sanitized receipts and aggregate reports are safe
+to commit locally.
+
+## Commands
+
+```powershell
+$env:PYTHONPATH = "src"
+python -B -m mtr_dogfood.cli preflight
+python -B -m mtr_dogfood.cli run --case-id <case-id> --arm router_auto
+python -B -m mtr_dogfood.cli batch
+python -B -m mtr_dogfood.cli report
+python -B -m mtr_dogfood.cli record-outcome --case-id <case-id> --state accepted
+```
+
+The installed console equivalents are `mtr-dogfood preflight`,
+`mtr-dogfood run`, `mtr-dogfood batch`, `mtr-dogfood report`, and
+`mtr-dogfood record-outcome`.
+
+## Safety model
+
+- exact target-repository allowlist and external-repository denylist;
+- clean HEAD, lock, operation, and porcelain checks before mutation;
+- one fresh worktree per attempt, bound to an immutable baseline;
+- strict JSON with duplicate-key rejection;
+- frozen validator plans and changed-path boundaries;
+- at most one capability escalation for eligible implementation failures;
+- transient commit identity and `--ff-only` automatic merges;
+- no remote mutation commands;
+- concurrency-contaminated wall-time labels while external sessions exist.
+
+Run the harness self-test with:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -B -m unittest discover -s tests -v
+```

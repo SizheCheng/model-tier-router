@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-tier-router-dogfood"
+version = "0.1.0"
+description = "Private local harness for advisory model-tier-router dogfood"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+mtr-dogfood = "mtr_dogfood.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
