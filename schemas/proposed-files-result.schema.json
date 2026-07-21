@@ -3,7 +3,6 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
-    "lane_id",
     "status",
     "summary",
     "notes",
@@ -12,7 +11,6 @@
   ],
   "properties": {
     "schema_version": {"type": "string", "enum": ["1.0.0"]},
-    "lane_id": {"type": "string"},
     "status": {"type": "string", "enum": ["completed", "blocked", "failed"]},
     "summary": {"type": "string"},
     "notes": {"type": "array", "items": {"type": "string"}},

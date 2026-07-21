@@ -30,6 +30,9 @@ from mtr_dogfood.validation import freeze_validator_plan
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests/fixtures/r3h-file-change-adapter-events.json"
+FINAL_R1_SCANNER_FIXTURE = (
+    ROOT / "tests/fixtures/final-r1-scanner-false-positive-events.jsonl"
+)
 WRITER = ROOT / "src/mtr_dogfood/bounded_writer.py"
 ALLOWED = [
     "docs/dogfood-automation.md",
@@ -362,6 +365,67 @@ class BoundedWriteScannerAndPromptTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(self.scan(command)["bounded_write_violation_detected"])
 
+    def test_exact_final_r1_false_positive_commands_are_semantically_clean(self):
+        expected_hashes = [
+            "819ab119ab9446dd8ae35353fe91b048c0ecd2f813d2efb9c09867039e3a37a3",
+            "c7ecbf2ba631b5cfe81b497a3efa23dac7fd03aa66e605fb7901e7cacaf77e1d",
+        ]
+        commands = [
+            json.loads(line)["item"]["command"]
+            for line in FINAL_R1_SCANNER_FIXTURE.read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertEqual(
+            [hashlib.sha256(command.encode("utf-8")).hexdigest() for command in commands],
+            expected_hashes,
+        )
+        scan = _scan_child_commands(
+            FINAL_R1_SCANNER_FIXTURE,
+            [],
+            self.worktree,
+            ALIASES,
+            [],
+            model_read_only=True,
+        )
+        for flag in (
+            "forbidden_action_detected",
+            "external_path_access_detected",
+            "credential_access_detected",
+            "remote_operation_attempted",
+            "unparseable_command_detected",
+            "bounded_write_violation_detected",
+            "model_direct_write_attempt_detected",
+        ):
+            self.assertFalse(scan[flag], flag)
+        self.assertTrue(
+            all(record["executable_paths"] for record in scan["command_records"])
+        )
+        self.assertTrue(
+            all(not record["path_candidates"] for record in scan["command_records"])
+        )
+
+    def test_semantic_scanner_still_rejects_real_external_secret_remote_and_write_ops(self):
+        cases = (
+            (r"Get-Content C:\outside\secret.txt", "external_path_access_detected"),
+            (r"Get-Content $env:OPENAI_API_KEY", "credential_access_detected"),
+            ("Invoke-WebRequest https://example.invalid", "remote_operation_attempted"),
+            (r"Set-Content -LiteralPath C:\outside\result.txt -Value blocked", "bounded_write_violation_detected"),
+        )
+        for command, flag in cases:
+            with self.subTest(command=command, flag=flag):
+                self.assertTrue(self.scan(command)[flag])
+
+    def test_parse_failure_is_indeterminate_not_proof_of_external_access(self):
+        self.events.write_text(json.dumps({
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "'powershell.exe -Command Get-Content README.md",
+                "exit_code": 0,
+            },
+        }) + "\n", encoding="utf-8")
+        scan = _scan_child_commands(self.events, [], self.worktree)
+        self.assertTrue(scan["unparseable_command_detected"])
+        self.assertFalse(scan["external_path_access_detected"])
     def test_remote_and_git_ref_mutations_remain_forbidden(self):
         for command in ("git push origin main", "git commit -m blocked"):
             with self.subTest(command=command):
@@ -382,6 +446,8 @@ class BoundedWriteScannerAndPromptTests(unittest.TestCase):
         self.assertIn("Do not invoke file_change", prompt)
         self.assertIn("Do not put a filesystem path", prompt)
         self.assertNotIn("--content-base64", prompt)
+        self.assertIn("Do not return a", prompt)
+        self.assertIn("lane_id", prompt)
         for alias, target in ALIASES.items():
             self.assertIn(alias, prompt)
             self.assertNotIn(target, prompt)
@@ -500,7 +566,6 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
                 )
                 output.write_text(json.dumps({
                     "schema_version": "1.0.0",
-                    "lane_id": case["case_id"],
                     "status": "completed",
                     "summary": "read-only proposal completed",
                     "notes": [],
@@ -552,6 +617,7 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
                 harness,
             )
             self.assertTrue(outcome["accepted"])
+            self.assertEqual(outcome["failure_causes"], [])
             self.assertTrue(outcome["automatic_merge"])
             scan = outcome["child_command_scan"]
             self.assertEqual(scan["bounded_write_count"], 0)

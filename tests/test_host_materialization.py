@@ -99,7 +99,6 @@ def result_value(
         })
     return {
         "schema_version": "1.0.0",
-        "lane_id": lane["lane_id"],
         "status": status,
         "summary": "complete proposed files",
         "notes": [],
@@ -170,6 +169,8 @@ class ProposedFileProtocolTests(unittest.TestCase):
                     [item["target_alias"] for item in lane["aliases"]],
                 )
                 self.assertTrue(all(item.line_endings == "LF" for item in proposal.files))
+                self.assertEqual(proposal.lane_id, lane_id)
+                self.assertEqual(proposal.result["lane_id"], lane_id)
 
     def test_crlf_is_preserved_when_declared(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
@@ -215,7 +216,7 @@ class ProposedFileProtocolTests(unittest.TestCase):
                     "MODEL_OUTPUT_SCHEMA_INVALID", raw_result(value), lane
                 )
 
-    def test_alias_set_lane_and_duplicate_rejections(self):
+    def test_alias_set_and_duplicate_rejections(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
         unknown = result_value(lane)
         unknown["proposed_files"][0]["target_alias"] = "unknown_alias"
@@ -238,10 +239,10 @@ class ProposedFileProtocolTests(unittest.TestCase):
         self.assert_classification(
             "PROPOSED_FILE_SET_UNEXPECTED", raw_result(extra), lane
         )
-        incorrect_lane = result_value(lane)
-        incorrect_lane["lane_id"] = "qwen-docx-hidden-elements-r1"
+        model_owned_lane = result_value(lane)
+        model_owned_lane["lane_id"] = "qwen-docx-hidden-elements-r1"
         self.assert_classification(
-            "PROPOSED_FILE_ALIAS_INVALID", raw_result(incorrect_lane), lane
+            "MODEL_OUTPUT_SCHEMA_INVALID", raw_result(model_owned_lane), lane
         )
 
     def test_nul_line_endings_byte_count_and_digest_rejections(self):

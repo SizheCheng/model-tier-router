@@ -546,7 +546,6 @@ class TemporaryGitPolicyTests(unittest.TestCase):
                     })
                 output.write_text(json.dumps({
                     "schema_version": "1.0.0",
-                    "lane_id": case["case_id"],
                     "status": "completed",
                     "summary": "fake child completed",
                     "notes": [],

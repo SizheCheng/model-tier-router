@@ -323,10 +323,6 @@ def validate_proposed_result(
         raise HostMaterializationError(
             "MODEL_OUTPUT_INCOMPLETE", "model result did not report completed"
         )
-    if value["lane_id"] != lane["lane_id"]:
-        raise HostMaterializationError(
-            "PROPOSED_FILE_ALIAS_INVALID", "model result lane ID mismatch"
-        )
     expectations = value["validation_expectations"]
     if (
         len(expectations) < lane["required_validation_expectations"]
@@ -480,12 +476,14 @@ def validate_proposed_result(
         raise HostMaterializationError(
             "LANE_VALIDATION_FAILED", "proposed files are empty or substantively incomplete"
         )
+    host_result = dict(value)
+    host_result["lane_id"] = lane["lane_id"]
     return ValidatedProposal(
         lane_id=lane["lane_id"],
         serialized_byte_count=len(raw),
         serialized_sha256=hashlib.sha256(raw).hexdigest(),
         files=tuple(prepared),
-        result=value,
+        result=host_result,
     )
 
 

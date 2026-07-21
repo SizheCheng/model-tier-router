@@ -173,7 +173,6 @@ class WritableSmokeTests(unittest.TestCase):
             output.write_text(
                 json.dumps({
                     "schema_version": "1.0.0",
-                    "lane_id": "writable_smoke",
                     "status": "completed",
                     "summary": "synthetic read-only proposal completed",
                     "notes": [],

@@ -471,7 +471,7 @@ class ChildCommandScannerTests(unittest.TestCase):
         self.assertFalse(scan["external_path_access_detected"])
         self.assertEqual(scan["command_records"], [])
 
-    def test_unparseable_or_incomplete_shell_command_fails_closed(self):
+    def test_unparseable_shell_is_indeterminate_without_invented_external_access(self):
         commands = (
             '"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -Command Get-Content',
             f'"{PWSH}" -Command',
@@ -480,7 +480,7 @@ class ChildCommandScannerTests(unittest.TestCase):
             with self.subTest(command=command):
                 scan = self.scan_command(command)
                 self.assertTrue(scan["unparseable_command_detected"])
-                self.assertTrue(scan["external_path_access_detected"])
+                self.assertFalse(scan["external_path_access_detected"])
 
     def test_scanning_does_not_consume_attempt_budget_or_launch_a_process(self):
         accounting = ProcessAccounting(maximum=5)

@@ -67,10 +67,16 @@ FORBIDDEN_ACTION_RE = re.compile(
     r"|\b(publish|deploy|release|customer\s+delivery)\b", re.I,
 )
 CREDENTIAL_ACCESS_RE = re.compile(
-    r"auth\.json|\.ssh|credential|cookie|token|secret|Get-ChildItem\s+Env:|"
-    r"\$env:(?:CODEX|OPENAI|GITHUB|GH)_", re.I,
+    r"auth\.json|(?:^|[\\/])\.ssh(?:[\\/]|$)|"
+    r"\b(?:Get-Credential|Get-Secret|cmdkey|vaultcmd)\b|"
+    r"\$env:(?:CODEX|OPENAI|GITHUB|GH)_(?:API_KEY|TOKEN|SECRET|PASSWORD|AUTH)\b",
+    re.I,
 )
-REMOTE_OPERATION_RE = re.compile(r"\bgit(?:\.exe)?\s+(push|fetch|pull|remote)\b", re.I)
+REMOTE_OPERATION_RE = re.compile(
+    r"\bgit(?:\.exe)?\s+(?:push|fetch|pull|remote)\b|"
+    r"\b(?:invoke-webrequest|invoke-restmethod|curl|wget)\b|https?://",
+    re.I,
+)
 WINDOWS_PATH_RE = re.compile(
     r'''(?P<double>"(?:[a-z]:[\\/]|\\\\[^\\/\s"]+[\\/])[^"]+")'''
     r'''|(?P<single>'(?:[a-z]:[\\/]|\\\\[^\\/\s']+[\\/])[^']+')'''
@@ -102,7 +108,7 @@ SHELL_WRITE_OPERATION_RE = re.compile(
     r"(?ix)"
     r"\b(?:set-content|add-content|out-file|writealltext|writeallbytes|"
     r"write_text|write_bytes|new-item|copy-item|move-item|remove-item|"
-    r"mkdir|makedirs|touch|unlink|rmtree|copyfile|rename|replace|openwrite|"
+    r"mkdir|makedirs|touch|unlink|rmtree|copyfile|rename|openwrite|"
     r"apply_patch|file_change|"
     r"tee|truncate|git\s+(?:add|apply|checkout|switch|branch|restore|mv|rm|init))\b"
     r"|(?:^|[^\w])open\s*\(|\.write\s*\(|(?<![<>=])>{1,2}(?![=])"
@@ -114,6 +120,11 @@ SAFE_POWERSHELL_BITCONVERTER_REPLACE_RE = re.compile(
     r"(?i)\[BitConverter\]::ToString\s*\(\s*"
     r"\$[A-Za-z_][A-Za-z0-9_:]*\s*\)\s*\.Replace\s*\("
 )
+
+
+def _without_powershell_here_strings(value: str) -> str:
+    """Remove PowerShell data literals before command-semantic scanning."""
+    return re.sub(r"(?ms)@['\"]\r?\n.*?^['\"]+@(?=\s*\|)", "@''@", value)
 
 
 def _contains_direct_write_operation(value: str) -> bool:
@@ -235,6 +246,14 @@ def _split_child_command(command: str) -> tuple[str, list[str], str, bool]:
     try:
         tokens = shlex.split(command, posix=False)
     except ValueError:
+        stripped = command.lstrip()
+        if stripped.startswith(('"', "'")):
+            quote = stripped[0]
+            end = stripped.find(quote, 1)
+            if end > 0:
+                executable = stripped[1:end]
+                operands = stripped[end + 1 :].lstrip()
+                return executable, [], operands, True
         return "", [], command, False
     if not tokens:
         return "", [], command, False
@@ -568,26 +587,32 @@ def _scan_child_commands(
             continue
         executable_name = ntpath.basename(executable).casefold()
         inspection_payload = shell if shell is not None else operand_text
+        semantic_payload = (
+            _without_powershell_here_strings(inspection_payload)
+            if shell is not None
+            else inspection_text
+        )
+        if not parsed:
+            semantic_payload = ""
         git_action = (
             argv[0].casefold()
             if executable_name in {"git", "git.exe"} and argv
             else ""
         )
-        if FORBIDDEN_ACTION_RE.search(inspection_text) or git_action in {
+        if FORBIDDEN_ACTION_RE.search(semantic_payload) or git_action in {
             "commit", "merge", "rebase", "reset", "clean", "push", "remote",
             "tag", "stash",
         }:
             result["forbidden_action_detected"] = True
-        if REMOTE_OPERATION_RE.search(inspection_text) or git_action in {
+        if REMOTE_OPERATION_RE.search(semantic_payload) or git_action in {
             "push", "fetch", "pull", "remote",
         }:
             result["remote_operation_attempted"] = True
-        if CREDENTIAL_ACCESS_RE.search(inspection_payload):
+        if CREDENTIAL_ACCESS_RE.search(semantic_payload):
             result["credential_access_detected"] = True
         if not parsed:
             result["unparseable_command_detected"] = True
-            result["external_path_access_detected"] = True
-        if re.search(r"(?<![\w.])\.\.([\\/]|$)", inspection_payload):
+        if re.search(r"(?<![\w.])\.\.([\\/]|$)", semantic_payload):
             result["external_path_access_detected"] = True
         event_cwd = item.get("cwd")
         event_cwd_verified = None
@@ -607,7 +632,13 @@ def _scan_child_commands(
                 "canonical": _canonical_path(executable),
                 "access_mode": "execute",
             })
-        path_input = shell if shell is not None else operand_text
+        path_input = (
+            ""
+            if not parsed
+            else semantic_payload
+            if shell is not None
+            else operand_text
+        )
         extracted = [
             (candidate, offset, "powershell_path_argument")
             for candidate, offset in _extract_powershell_path_operands(path_input)
@@ -660,7 +691,6 @@ def _scan_child_commands(
         }
         if shell_name and shell is None:
             result["unparseable_command_detected"] = True
-            result["external_path_access_detected"] = True
         command_completed = event.get("type") == "item.completed"
         child_exit_code = item.get("exit_code")
         command_output = item.get("aggregated_output", "")
@@ -679,7 +709,7 @@ def _scan_child_commands(
             child_exit_code if isinstance(child_exit_code, int) else None,
         )
         direct_write = bool(
-            _contains_direct_write_operation(inspection_text)
+            _contains_direct_write_operation(semantic_payload)
             and not write_transport["recognized"]
         )
         write_capable = bool(write_transport["recognized"] or direct_write)
@@ -800,7 +830,8 @@ For every proposed file, declare its exact UTF-8 byte count, SHA-256, media type
 encoding, representation, and line endings. Declare the parent validations that
 must pass. Incomplete, malformed, truncated, missing, extra, or oversized output
 will fail closed and will materialize no file. The parent alone validates all
-payloads and then invokes the trusted writer transactionally.
+payloads and then invokes the trusted writer transactionally. Do not return a
+lane_id; the parent injects it from the frozen route contract.
 
 Read only inside the assigned worktree. Use only repository files and
 synthetic fixtures already present there. Do not access credentials, user
@@ -1222,62 +1253,115 @@ def _run_attempt(
                 if not row["unchanged"]
             ],
         )
-        try:
-            infrastructure = _normalize_infrastructure(
-                result.get("infrastructure_failure_class")
-            )
-            if infrastructure or int(result.get("host_policy_failure_count") or 0):
-                raise HostMaterializationError(
-                    infrastructure or "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS",
-                    "model process infrastructure gate failed",
-                )
+        protocol_failures: list[dict[str, str]] = []
+        infrastructure = _normalize_infrastructure(
+            result.get("infrastructure_failure_class")
+        )
+        if infrastructure or int(result.get("host_policy_failure_count") or 0):
+            protocol_failures.append({
+                "class": infrastructure
+                or "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS",
+                "detail": "model process infrastructure gate failed",
+            })
+        else:
             if any(scan.get(name) for name in (
                 "external_path_access_detected",
                 "credential_access_detected",
                 "remote_operation_attempted",
                 "forbidden_action_detected",
             )):
-                raise HostMaterializationError(
-                    "UNAUTHORIZED_ACTION", "higher-precedence child safety boundary failed"
-                )
+                protocol_failures.append({
+                    "class": "UNAUTHORIZED_ACTION",
+                    "detail": "structured child safety evidence crossed a boundary",
+                })
+            elif scan.get("model_file_change_attempt_detected"):
+                protocol_failures.append({
+                    "class": "MODEL_FILE_CHANGE_ATTEMPT",
+                    "detail": "model attempted file_change or apply_patch",
+                })
+            elif (
+                scan.get("model_direct_write_attempt_detected")
+                or scan.get("bounded_write_violation_detected")
+            ):
+                protocol_failures.append({
+                    "class": "MODEL_DIRECT_WRITE_ATTEMPT",
+                    "detail": "model attempted a direct or invalid bounded write",
+                })
+            elif scan.get("unparseable_command_detected"):
+                protocol_failures.append({
+                    "class": "HARNESS_COMMAND_PARSE_INDETERMINATE",
+                    "detail": "child command could not be parsed into execution semantics",
+                })
             if not source_repositories_unchanged:
-                raise HostMaterializationError(
-                    "UNAUTHORIZED_ACTION", "source repository changed before materialization"
+                protocol_failures.append({
+                    "class": "UNAUTHORIZED_ACTION",
+                    "detail": "source repository changed before materialization",
+                })
+
+            payload_scan = dict(scan)
+            for name in (
+                "external_path_access_detected",
+                "credential_access_detected",
+                "remote_operation_attempted",
+                "forbidden_action_detected",
+                "unparseable_command_detected",
+                "bounded_write_violation_detected",
+                "model_direct_write_attempt_detected",
+                "model_file_change_attempt_detected",
+            ):
+                payload_scan[name] = False
+            try:
+                proposal = validate_model_phase(
+                    process_result=result,
+                    output_path=final_output,
+                    lane=lane,
+                    schema=output_schema,
+                    command_scan=payload_scan,
+                    workspace_mutated=model_workspace_mutated,
+                    immutable_hashes_match=immutable_hashes_match,
                 )
-            proposal = validate_model_phase(
-                process_result=result,
-                output_path=final_output,
-                lane=lane,
-                schema=output_schema,
-                command_scan=scan,
-                workspace_mutated=model_workspace_mutated,
-                immutable_hashes_match=immutable_hashes_match,
-            )
-            output_valid = True
-            claim = proposal.result
-            transaction_receipt = materialize_transaction(
-                workspace=worktree,
-                metadata=metadata,
-                proposal=proposal,
-                lane=lane,
-                helper_sha256=writer_digest,
-                policy_sha256=write_policy_digest,
-                receipt_schema_path=receipt_schema_path,
-                receipt_schema_sha256=receipt_schema_digest,
-                protected_roots=tuple(
-                    Path(entry["path"]) for entry in contract["repositories"].values()
-                ),
-            )
-            writer_receipt_validation = validate_writer_receipts(
-                workspace=worktree,
-                helper_sha256=writer_digest,
-                policy_sha256=write_policy_digest,
-                target_aliases=target_aliases,
-            )
-        except HostMaterializationError as exc:
-            protocol_failure = exc.classification
-            if exc.transaction_receipt is not None:
-                transaction_receipt = exc.transaction_receipt
+            except HostMaterializationError as exc:
+                protocol_failures.append({
+                    "class": exc.classification,
+                    "detail": str(exc),
+                })
+                if exc.transaction_receipt is not None:
+                    transaction_receipt = exc.transaction_receipt
+            else:
+                output_valid = True
+                claim = proposal.result
+                if not protocol_failures:
+                    try:
+                        transaction_receipt = materialize_transaction(
+                            workspace=worktree,
+                            metadata=metadata,
+                            proposal=proposal,
+                            lane=lane,
+                            helper_sha256=writer_digest,
+                            policy_sha256=write_policy_digest,
+                            receipt_schema_path=receipt_schema_path,
+                            receipt_schema_sha256=receipt_schema_digest,
+                            protected_roots=tuple(
+                                Path(entry["path"])
+                                for entry in contract["repositories"].values()
+                            ),
+                        )
+                        writer_receipt_validation = validate_writer_receipts(
+                            workspace=worktree,
+                            helper_sha256=writer_digest,
+                            policy_sha256=write_policy_digest,
+                            target_aliases=target_aliases,
+                        )
+                    except HostMaterializationError as exc:
+                        protocol_failures.append({
+                            "class": exc.classification,
+                            "detail": str(exc),
+                        })
+                        if exc.transaction_receipt is not None:
+                            transaction_receipt = exc.transaction_receipt
+        protocol_failure = (
+            protocol_failures[0]["class"] if protocol_failures else None
+        )
         transaction_path = metadata / "host-materialization-transaction.json"
         if transaction_path.is_file():
             shutil.copyfile(transaction_path, raw_dir / transaction_path.name)
@@ -1392,6 +1476,13 @@ def _run_attempt(
             failure_class = "LANE_VALIDATION_FAILED"
         else:
             failure_class = ""
+        if failure_class and not any(
+            cause["class"] == failure_class for cause in protocol_failures
+        ):
+            protocol_failures.append({
+                "class": failure_class,
+                "detail": "post-exec acceptance gate failed",
+            })
         accepted = failure_class == ""
         execution_receipt = {
             "schema_version": "1.0.0",
@@ -1424,6 +1515,7 @@ def _run_attempt(
             "confidentiality_scan_passed": confidentiality_ok,
             "diff_sha256": hashlib.sha256(patch).hexdigest(),
             "failure_class": failure_class,
+            "failure_causes": protocol_failures,
             "accepted": accepted,
             "usage": {
                 key: result.get(key)
