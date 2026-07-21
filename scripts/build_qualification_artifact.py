@@ -103,17 +103,29 @@ def build(
     dirty_source = source_status(root, output_directory)
     source_head = git(root, "rev-parse", "HEAD")
     output_directory.mkdir(parents=True, exist_ok=True)
-    final_execution = entrypoint == "final-execution"
-    artifact = output_directory / (
-        "mtr-dogfood-final-execution.pyz"
-        if final_execution
-        else "mtr-dogfood-qualification.pyz"
-    )
-    wrapper_source = root / (
-        "final_execution/RUN_FINAL_TWO_PRODUCT_LANES.ps1"
-        if final_execution
-        else "qualification/RUN_QUALIFICATION.ps1"
-    )
+    entrypoints = {
+        "qualification": (
+            "mtr-dogfood-qualification.pyz",
+            "qualification/RUN_QUALIFICATION.ps1",
+            "qualification",
+        ),
+        "final-execution": (
+            "mtr-dogfood-final-execution.pyz",
+            "final_execution/RUN_FINAL_TWO_PRODUCT_LANES.ps1",
+            "final_execution",
+        ),
+        "remaining-lane": (
+            "mtr-dogfood-remaining-lane.pyz",
+            "final_execution/RUN_FINAL_REMAINING_QWEN_LANE.ps1",
+            "remaining_lane_execution",
+        ),
+    }
+    try:
+        artifact_name, wrapper_name, module = entrypoints[entrypoint]
+    except KeyError as exc:
+        raise RuntimeError("UNKNOWN_ARTIFACT_ENTRYPOINT") from exc
+    artifact = output_directory / artifact_name
+    wrapper_source = root / wrapper_name
     wrapper = output_directory / wrapper_source.name
 
     with tempfile.TemporaryDirectory(prefix="mtr-qualification-build-") as temporary:
@@ -138,7 +150,7 @@ def build(
         assets.mkdir()
         for name, relative in ASSETS.items():
             shutil.copyfile(root / relative, assets / name)
-        module = "final_execution" if final_execution else "qualification"
+
         (stage / "__main__.py").write_text(
             f"from mtr_dogfood.{module} import main\n"
             "raise SystemExit(main())\n",
@@ -201,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-directory", required=True)
     parser.add_argument(
         "--entrypoint",
-        choices=("qualification", "final-execution"),
+        choices=("qualification", "final-execution", "remaining-lane"),
         default="qualification",
     )
     args = parser.parse_args(argv)
