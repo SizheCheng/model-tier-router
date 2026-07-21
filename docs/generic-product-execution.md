@@ -114,3 +114,16 @@ python -B scripts/evaluate_product_readiness.py `
 The evaluator fails closed and reports
 `eligible_for_default_product_development: false` until every gate is satisfied.
 It never launches a model or mutates a product repository.
+
+## Packet-lifetime start consumption
+
+`maximum_new_starts: 1` applies to the complete lifetime of a packet, not only
+to one result directory. Immediately before the real launcher is called, the
+runtime atomically creates `results/campaign-state.json` with
+`starts_consumed: 1`. The file is never created during qualification.
+
+If the launcher, model, validator, or product result fails after reservation,
+the packet remains consumed. Every later invocation of that packet fails with
+`PACKET_CAMPAIGN_ALREADY_CONSUMED`; changing the result-directory name cannot
+create another start. Removing or rewriting the campaign-state receipt is not
+an authorized retry mechanism.

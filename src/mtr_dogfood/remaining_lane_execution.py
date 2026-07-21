@@ -123,6 +123,73 @@ def _clone_repository(source: Path, target: Path, head: str) -> Path:
     return target
 
 
+class PacketCampaignLatch:
+    """Persist one real start reservation across every invocation of a packet."""
+
+    def __init__(self, path: Path, *, campaign_id: str) -> None:
+        self.path = path
+        self.campaign_id = campaign_id
+
+    def reserve(self, lane_id: str) -> dict[str, Any]:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "schema_version": "1.0.0",
+            "campaign_id": self.campaign_id,
+            "lane_id": lane_id,
+            "maximum_real_starts": 1,
+            "starts_consumed": 1,
+            "no_retry": True,
+            "reservation_state": "START_RESERVED",
+            "reserved_at": _utc_now(),
+            "process_started": False,
+            "accepted": None,
+            "terminal_status": "",
+        }
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        try:
+            descriptor = os.open(self.path, flags, 0o600)
+        except FileExistsError as exc:
+            raise FinalExecutionError("PACKET_CAMPAIGN_ALREADY_CONSUMED") from exc
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(canonical_json_bytes(record))
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            self.path.unlink(missing_ok=True)
+            raise
+        return record
+
+    def finish(
+        self,
+        lane_id: str,
+        *,
+        process_started: bool,
+        accepted: bool,
+        terminal_status: str,
+    ) -> None:
+        if not self.path.is_file():
+            raise FinalExecutionError("PACKET_CAMPAIGN_LATCH_MISSING")
+        value = load_json(self.path)
+        if (
+            value.get("campaign_id") != self.campaign_id
+            or value.get("lane_id") != lane_id
+            or value.get("starts_consumed") != 1
+            or value.get("reservation_state") != "START_RESERVED"
+        ):
+            raise FinalExecutionError("PACKET_CAMPAIGN_LATCH_INVALID")
+        value.update(
+            {
+                "process_started": bool(process_started),
+                "accepted": bool(accepted),
+                "terminal_status": terminal_status,
+                "reservation_state": "TERMINAL",
+                "completed_at": _utc_now(),
+            }
+        )
+        _write_json(self.path, value)
+
+
 class CampaignLedger:
     def __init__(
         self,
@@ -247,6 +314,7 @@ def self_test() -> dict[str, Any]:
         "no_retry": True,
         "stop_on_first_failure": True,
         "maximum_real_starts": 1,
+        "packet_lifetime_maximum_real_starts": 1,
         "real_model_process_starts": 0,
         "real_model_requests": 0,
         "assets": assets,
@@ -353,6 +421,14 @@ def _run_lanes(
         ceiling=manifest["maximum_new_starts"],
         historical_accounting=manifest.get("historical_accounting", {}),
     )
+    packet_latch = (
+        None
+        if qualification_only
+        else PacketCampaignLatch(
+            packet / "results" / "campaign-state.json",
+            campaign_id=manifest["campaign_id"],
+        )
+    )
     budget = ProcessAccounting(maximum=manifest["maximum_new_starts"])
     outcomes: list[dict[str, Any]] = []
     contract = {
@@ -417,6 +493,8 @@ def _run_lanes(
 
         def reserved_launcher(**kwargs: Any) -> dict[str, Any]:
             nonlocal reserved
+            if packet_latch is not None:
+                packet_latch.reserve(lane_id)
             ledger.reserve(lane_id)
             reserved = True
             if qualification_only:
@@ -460,14 +538,22 @@ def _run_lanes(
             continue
         except Exception as exc:
             if reserved:
+                process_started = (
+                    budget.os_child_process_started > starts_before_lane
+                )
                 ledger.finish(
                     lane_id,
-                    process_started=(
-                        budget.os_child_process_started > starts_before_lane
-                    ),
+                    process_started=process_started,
                     accepted=False,
                     terminal_status=type(exc).__name__,
                 )
+                if packet_latch is not None:
+                    packet_latch.finish(
+                        lane_id,
+                        process_started=process_started,
+                        accepted=False,
+                        terminal_status=type(exc).__name__,
+                    )
             outcomes.append(
                 {
                     "lane_id": lane_id,
@@ -482,12 +568,22 @@ def _run_lanes(
             )
             break
 
+        process_started = bool(outcome.get("child_process_started"))
+        accepted = bool(outcome.get("accepted"))
+        terminal_status = str(outcome.get("failure_class") or "accepted")
         ledger.finish(
             lane_id,
-            process_started=bool(outcome.get("child_process_started")),
-            accepted=bool(outcome.get("accepted")),
-            terminal_status=str(outcome.get("failure_class") or "accepted"),
+            process_started=process_started,
+            accepted=accepted,
+            terminal_status=terminal_status,
         )
+        if packet_latch is not None:
+            packet_latch.finish(
+                lane_id,
+                process_started=process_started,
+                accepted=accepted,
+                terminal_status=terminal_status,
+            )
         outcomes.append(outcome)
         if not outcome.get("accepted"):
             break

@@ -58,6 +58,10 @@ def canary_record(packet_root: str | Path) -> dict[str, Any]:
     if len(candidates) != 1:
         raise ProductReadinessError("REAL_EXECUTION_CLOSEOUT_CARDINALITY_INVALID")
     closeout_path, closeout = candidates[0]
+    campaign_state_path = results / "campaign-state.json"
+    if not campaign_state_path.is_file():
+        raise ProductReadinessError("PACKET_CAMPAIGN_LATCH_MISSING")
+    campaign_state = load_json(campaign_state_path)
     lanes = manifest.get("lanes", [])
     if len(lanes) != 1:
         raise ProductReadinessError("CANARY_MANIFEST_LANE_CARDINALITY_INVALID")
@@ -80,6 +84,12 @@ def canary_record(packet_root: str | Path) -> dict[str, Any]:
         and closeout.get("source_repositories_unchanged") is True
         and len(closeout.get("outcomes", [])) == 1
         and closeout["outcomes"][0].get("accepted") is True
+        and campaign_state.get("campaign_id") == manifest.get("campaign_id")
+        and campaign_state.get("lane_id") == lane.get("lane_id")
+        and campaign_state.get("starts_consumed") == 1
+        and campaign_state.get("no_retry") is True
+        and campaign_state.get("reservation_state") == "TERMINAL"
+        and campaign_state.get("accepted") is True
     )
     return {
         "schema_version": "1.0.0",
@@ -96,6 +106,7 @@ def canary_record(packet_root: str | Path) -> dict[str, Any]:
         "accepted": accepted,
         "packet_manifest_sha256": packet_receipt["manifest_sha256"],
         "closeout_path": str(closeout_path),
+        "campaign_state_path": str(campaign_state_path),
     }
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from mtr_dogfood.remaining_lane_execution import (
     CampaignLedger,
     FinalExecutionError,
+    PacketCampaignLatch,
     _validate_manifest,
     self_test,
 )
@@ -36,6 +37,34 @@ class RemainingLaneExecutionTests(unittest.TestCase):
         self.assertTrue(value["no_retry"])
         self.assertTrue(value["stop_on_first_failure"])
         self.assertEqual(value["real_model_process_starts"], 0)
+
+    def test_packet_latch_permanently_blocks_a_second_invocation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "results" / "campaign-state.json"
+            first = PacketCampaignLatch(path, campaign_id="CANARY_R1")
+            second = PacketCampaignLatch(path, campaign_id="CANARY_R1")
+            record = first.reserve("lane-r1")
+            self.assertEqual(record["starts_consumed"], 1)
+            self.assertEqual(record["reservation_state"], "START_RESERVED")
+            with self.assertRaisesRegex(
+                FinalExecutionError,
+                "PACKET_CAMPAIGN_ALREADY_CONSUMED",
+            ):
+                second.reserve("lane-r1")
+            first.finish(
+                "lane-r1",
+                process_started=False,
+                accepted=False,
+                terminal_status="LAUNCH_FAILED",
+            )
+            terminal = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(terminal["reservation_state"], "TERMINAL")
+            self.assertEqual(terminal["starts_consumed"], 1)
+            with self.assertRaisesRegex(
+                FinalExecutionError,
+                "PACKET_CAMPAIGN_ALREADY_CONSUMED",
+            ):
+                second.reserve("lane-r1")
 
     def test_ledger_allows_exactly_one_reservation(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -261,6 +290,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 "START_RESERVATION_REQUESTED",
             )
             self.assertTrue(closeout["source_repositories_unchanged"])
+            self.assertFalse((packet / "results" / "campaign-state.json").exists())
             escaping_manifest = json.loads(json.dumps(manifest))
             escaping_manifest["lane_policy"]["snapshot"] = str(
                 (base / "outside-policy.json").resolve()
