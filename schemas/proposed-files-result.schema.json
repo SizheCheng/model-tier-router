@@ -24,8 +24,6 @@
           "representation",
           "encoding",
           "content",
-          "utf8_byte_count",
-          "sha256",
           "line_endings",
           "media_type"
         ],
@@ -34,8 +32,6 @@
           "representation": {"type": "string", "enum": ["utf8_text"]},
           "encoding": {"type": "string", "enum": ["UTF-8"]},
           "content": {"type": "string"},
-          "utf8_byte_count": {"type": "integer"},
-          "sha256": {"type": "string"},
           "line_endings": {"type": "string", "enum": ["LF", "CRLF"]},
           "media_type": {
             "type": "string",

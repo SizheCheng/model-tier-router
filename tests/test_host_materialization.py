@@ -86,14 +86,11 @@ def result_value(
         text = contents[alias]
         if line_endings == "CRLF":
             text = text.replace("\r\n", "\n").replace("\n", "\r\n")
-        encoded = text.encode("utf-8")
         proposed.append({
             "target_alias": alias,
             "representation": "utf8_text",
             "encoding": "UTF-8",
             "content": text,
-            "utf8_byte_count": len(encoded),
-            "sha256": hashlib.sha256(encoded).hexdigest(),
             "line_endings": line_endings,
             "media_type": policy["media_type"],
         })
@@ -171,6 +168,11 @@ class ProposedFileProtocolTests(unittest.TestCase):
                 self.assertTrue(all(item.line_endings == "LF" for item in proposal.files))
                 self.assertEqual(proposal.lane_id, lane_id)
                 self.assertEqual(proposal.result["lane_id"], lane_id)
+                for source, prepared in zip(
+                    proposal.result["proposed_files"], proposal.files, strict=True
+                ):
+                    self.assertEqual(source["utf8_byte_count"], len(prepared.content))
+                    self.assertEqual(source["sha256"], prepared.sha256)
 
     def test_arbitrary_lane_uses_only_declarative_content_requirements(self):
         custom = copy.deepcopy(self.policy)
@@ -297,25 +299,21 @@ class ProposedFileProtocolTests(unittest.TestCase):
             "MODEL_OUTPUT_SCHEMA_INVALID", raw_result(model_owned_lane), lane
         )
 
-    def test_nul_line_endings_byte_count_and_digest_rejections(self):
+    def test_nul_line_endings_and_model_owned_integrity_rejections(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
         cases = []
         nul = result_value(lane)
         nul["proposed_files"][0]["content"] += "\x00"
-        nul["proposed_files"][0]["utf8_byte_count"] += 1
-        nul["proposed_files"][0]["sha256"] = hashlib.sha256(
-            nul["proposed_files"][0]["content"].encode()
-        ).hexdigest()
         cases.append(("PROPOSED_FILE_ENCODING_INVALID", nul))
         endings = result_value(lane)
         endings["proposed_files"][0]["line_endings"] = "CRLF"
         cases.append(("PROPOSED_FILE_ENCODING_INVALID", endings))
         count = result_value(lane)
-        count["proposed_files"][0]["utf8_byte_count"] += 1
-        cases.append(("PROPOSED_FILE_ENCODING_INVALID", count))
+        count["proposed_files"][0]["utf8_byte_count"] = 1
+        cases.append(("MODEL_OUTPUT_SCHEMA_INVALID", count))
         digest = result_value(lane)
         digest["proposed_files"][0]["sha256"] = "0" * 64
-        cases.append(("PROPOSED_FILE_DIGEST_MISMATCH", digest))
+        cases.append(("MODEL_OUTPUT_SCHEMA_INVALID", digest))
         for expected, value in cases:
             with self.subTest(expected=expected):
                 self.assert_classification(expected, raw_result(value), lane)
@@ -327,8 +325,6 @@ class ProposedFileProtocolTests(unittest.TestCase):
         encoded = text.encode()
         over["proposed_files"][0].update({
             "content": text,
-            "utf8_byte_count": len(encoded),
-            "sha256": hashlib.sha256(encoded).hexdigest(),
         })
         self.assert_classification(
             "PROPOSED_FILE_CONTENT_LIMIT_EXCEEDED", raw_result(over), lane
@@ -364,11 +360,7 @@ class ProposedFileProtocolTests(unittest.TestCase):
     def test_empty_and_incomplete_substantive_files_fail_before_materialization(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
         empty = result_value(lane)
-        empty["proposed_files"][0].update({
-            "content": "",
-            "utf8_byte_count": 0,
-            "sha256": hashlib.sha256(b"").hexdigest(),
-        })
+        empty["proposed_files"][0]["content"] = ""
         self.assert_classification(
             "PROPOSED_FILE_CONTENT_LIMIT_EXCEEDED", raw_result(empty), lane
         )
@@ -379,11 +371,7 @@ class ProposedFileProtocolTests(unittest.TestCase):
                     item for item in incomplete["proposed_files"]
                     if item["target_alias"] == alias
                 )
-                record.update({
-                    "content": "incomplete\n",
-                    "utf8_byte_count": len(b"incomplete\n"),
-                    "sha256": hashlib.sha256(b"incomplete\n").hexdigest(),
-                })
+                record["content"] = "incomplete\n"
                 self.assert_classification(
                     "LANE_VALIDATION_FAILED", raw_result(incomplete), lane
                 )

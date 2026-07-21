@@ -453,15 +453,7 @@ def validate_proposed_result(
             raise HostMaterializationError(
                 "PROPOSED_FILE_CONTENT_LIMIT_EXCEEDED", f"content limit failed for {name}"
             )
-        if record["utf8_byte_count"] != len(content):
-            raise HostMaterializationError(
-                "PROPOSED_FILE_ENCODING_INVALID", f"byte count mismatch for {name}"
-            )
         digest = hashlib.sha256(content).hexdigest()
-        if record["sha256"] != digest:
-            raise HostMaterializationError(
-                "PROPOSED_FILE_DIGEST_MISMATCH", f"digest mismatch for {name}"
-            )
         record_bytes = json.dumps(
             record, ensure_ascii=False, separators=(",", ":")
         ).encode("utf-8")
@@ -517,6 +509,14 @@ def validate_proposed_result(
         )
     host_result = dict(value)
     host_result["lane_id"] = lane["lane_id"]
+    host_result["proposed_files"] = [
+        {
+            **record,
+            "utf8_byte_count": len(file.content),
+            "sha256": file.sha256,
+        }
+        for record, file in zip(value["proposed_files"], prepared, strict=True)
+    ]
     return ValidatedProposal(
         lane_id=lane["lane_id"],
         serialized_byte_count=len(raw),

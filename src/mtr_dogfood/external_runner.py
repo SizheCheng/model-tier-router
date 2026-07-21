@@ -88,6 +88,13 @@ POWERSHELL_PATH_ARGUMENT_RE = re.compile(
     r'''(?ix)(?<!\S)-(?:literal)?path\s+'''
     r'''(?P<value>"[^"\r\n]*"|'[^'\r\n]*'|[^\s|;&]+)''',
 )
+POWERSHELL_POSITIONAL_PATH_RE = re.compile(
+    r'''(?ix)(?:^|[;|&]\s*)'''
+    r'''(?:get-content|get-childitem|get-child-item|test-path|get-item|'''
+    r'''resolve-path|set-content|add-content|out-file|remove-item)\s+'''
+    r'''(?P<value>"[^"\r\n]*"|'[^'\r\n]*'|'''
+    r'''(?:[a-z]:[\\/]|\\\\|\.\.?(?:[\\/])|[\\/])[^\s|;&]+)''',
+)
 CONFIDENTIAL_CONTENT_RE = re.compile(
     rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
     rb"|\bAKIA[0-9A-Z]{16}\b|\bsk-[A-Za-z0-9_-]{20,}\b"
@@ -284,12 +291,13 @@ def _extract_windows_paths(text: str) -> list[tuple[str, int]]:
 
 
 def _extract_powershell_path_operands(text: str) -> list[tuple[str, int]]:
-    """Extract only explicit PowerShell -Path/-LiteralPath argument values."""
+    """Extract semantic PowerShell path arguments, excluding data literals."""
     paths: list[tuple[str, int]] = []
-    for match in POWERSHELL_PATH_ARGUMENT_RE.finditer(text):
-        raw = match.group("value")
-        candidate = _strip_matching_quotes(raw)
-        paths.append((candidate, match.start("value")))
+    for pattern in (POWERSHELL_PATH_ARGUMENT_RE, POWERSHELL_POSITIONAL_PATH_RE):
+        for match in pattern.finditer(text):
+            raw = match.group("value")
+            candidate = _strip_matching_quotes(raw)
+            paths.append((candidate, match.start("value")))
     return paths
 
 
@@ -661,10 +669,16 @@ def _scan_child_commands(
             (candidate, offset, "powershell_path_argument")
             for candidate, offset in _extract_powershell_path_operands(path_input)
         ]
-        extracted.extend(
-            (candidate, offset, "absolute_path_fallback")
-            for candidate, offset in _extract_windows_paths(path_input)
-        )
+        # A shell payload is source code, not an argv vector. Searching the
+        # whole payload for path-looking substrings makes string literals such
+        # as Python's ``"\\n\\n..."`` look like UNC operands. PowerShell path
+        # access is handled above from explicit -Path/-LiteralPath arguments;
+        # the generic absolute-path fallback is reserved for direct child argv.
+        if shell is None:
+            extracted.extend(
+                (candidate, offset, "absolute_path_fallback")
+                for candidate, offset in _extract_windows_paths(path_input)
+            )
         candidates = []
         seen_candidates: set[tuple[str, int]] = set()
         for candidate, offset, source in extracted:
@@ -851,8 +865,10 @@ writer, PowerShell or Python writes, shell redirection, directory creation,
 deletion, moves, or any Git mutation. Return proposed UTF-8 file contents only
 through the structured final result. Refer to targets only by the exact aliases
 above. Do not put a filesystem path or changed_paths field in the final result.
-For every proposed file, declare its exact UTF-8 byte count, SHA-256, media type,
-encoding, representation, and line endings. Declare the parent validations that
+For every proposed file, declare its media type, encoding, representation, and
+line endings. The parent computes UTF-8 byte counts and SHA-256 digests from the
+validated content; do not return either integrity field. Declare the parent
+validations that
 must pass. Incomplete, malformed, truncated, missing, extra, or oversized output
 will fail closed and will materialize no file. The parent alone validates all
 payloads and then invokes the trusted writer transactionally. Do not return a

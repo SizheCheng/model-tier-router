@@ -542,8 +542,6 @@ class TemporaryGitPolicyTests(unittest.TestCase):
                         "representation": "utf8_text",
                         "encoding": "UTF-8",
                         "content": content,
-                        "utf8_byte_count": len(payload),
-                        "sha256": hashlib.sha256(payload).hexdigest(),
                         "line_endings": "LF",
                         "media_type": media[alias],
                     })

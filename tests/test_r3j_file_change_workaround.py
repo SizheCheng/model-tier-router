@@ -552,8 +552,6 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
                         "representation": "utf8_text",
                         "encoding": "UTF-8",
                         "content": content.decode("utf-8"),
-                        "utf8_byte_count": len(content),
-                        "sha256": hashlib.sha256(content).hexdigest(),
                         "line_endings": "LF",
                         "media_type": (
                             "text/markdown" if target.endswith(".md") else "text/x-python"

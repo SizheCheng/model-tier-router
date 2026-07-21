@@ -18,9 +18,14 @@ runtime contains no product-lane dispatch table.
   without that flag and with its own explicit authority and historical accounting.
 - The source packet, runtime, task, decision, source repositories, result root, and
   bounded write aliases are hash- or path-bound before reservation.
-- The model returns proposed UTF-8 content only. The host owns `lane_id`, validates
-  the declarative lane policy, materializes exact aliases transactionally, runs the
-  frozen validators, and records all post-exec failure causes.
+- The model returns proposed UTF-8 content only. The host owns `lane_id`, UTF-8
+  byte counts, and SHA-256 digests; redundant integrity values are never trusted
+  to model output. The host validates the declarative lane policy, materializes
+  exact aliases transactionally, runs the frozen validators, and records all
+  post-exec failure causes.
+- Command scanning uses structured executable/argv evidence when available. For
+  shell display-command fallback, it recognizes semantic path-bearing operands
+  instead of searching arbitrary source-code and string-literal text for paths.
 
 ## Onboard a product
 

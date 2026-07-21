@@ -143,6 +143,26 @@ class ChildCommandScannerTests(unittest.TestCase):
             self.assertEqual(candidate["access_mode"], fixture["expected_access_mode"])
             self.assertTrue(candidate["inside_worktree"])
 
+    def test_exact_mtr_r2_python_literal_is_not_an_external_path(self):
+        fixture = ROOT / "tests" / "fixtures" / "mtr-r2-python-literal-path-events.jsonl"
+        raw = fixture.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            [hashlib.sha256(line.encode("utf-8")).hexdigest() for line in raw],
+            [
+                "678e2d6bcb5f7f3e9d11e1f9c48769fdc4f258b81533ffad2562879556f32964",
+                "616206edff24e178b9795f13efa86840fcd19bdc1f8affc81d15be8f559d174d",
+            ],
+        )
+        self.events.write_text("\n".join(raw) + "\n", encoding="utf-8")
+        scan = _scan_child_commands(self.events, [], self.worktree)
+        self.assertFalse(scan["external_path_access_detected"])
+        self.assertEqual(len(scan["command_records"]), 2)
+        self.assertTrue(all(
+            record["command_source"] == "display_command_fallback"
+            and record["path_candidates"] == []
+            for record in scan["command_records"]
+        ))
+
     def test_windows_path_kind_taxonomy(self):
         cases = {
             r"smoke\result.txt": "relative",

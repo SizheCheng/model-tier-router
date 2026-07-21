@@ -144,7 +144,7 @@ Do not put {result_path} or any other filesystem path in the final result. Do
 not invoke file_change, apply_patch, a bounded writer, PowerShell or Python
 writes, shell redirection, or Git mutation. The model workspace is read-only.
 Return only the strict proposed-file result with alias, representation, UTF-8
-content, exact byte count, SHA-256, LF declaration, text/plain media type, and
+content, LF declaration, text/plain media type, and
 a required exact-byte validation expectation. The parent validates the whole
 result before transactionally materializing any file. Do not read outside this
 repository or use network tools, web search, credentials, apps, plugins, or
