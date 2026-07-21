@@ -249,6 +249,9 @@ def _validate_manifest(
         or manifest.get("maximum_new_starts") != 1
         or manifest.get("no_retry") is not True
         or manifest.get("stop_on_first_failure") is not True
+        or not isinstance(
+            manifest.get("qualification_release_only", False), bool
+        )
         or len(lanes) != 1
         or len(lane_ids) != 1
         or not isinstance(lane_ids[0], str)
@@ -262,6 +265,10 @@ def _validate_manifest(
         or not lanes[0].get("branch_prefix")
     ):
         raise FinalExecutionError("FINAL_EXECUTION_MANIFEST_INVALID")
+    if not qualification_only and manifest.get("qualification_release_only", False):
+        raise FinalExecutionError(
+            "QUALIFICATION_RELEASE_REAL_EXECUTION_FORBIDDEN"
+        )
     release = manifest.get("runtime_release", {})
     embedded_release = _release_metadata()
     if (

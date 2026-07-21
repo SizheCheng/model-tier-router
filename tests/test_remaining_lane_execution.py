@@ -202,6 +202,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                     '{"prior_consumed_starts":2}',
                     "--branch-prefix",
                     "mtr-test/generic",
+                    "--qualification-release-only",
                 ],
                 cwd=ROOT,
                 capture_output=True,
@@ -217,6 +218,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(manifest["maximum_new_starts"], 1)
             self.assertEqual(manifest["route_id"], "TEST_GENERIC_PRODUCT_EXECUTION_R1")
             self.assertEqual(manifest["historical_accounting"], {"prior_consumed_starts": 2})
+            self.assertTrue(manifest["qualification_release_only"])
             self.assertEqual(manifest["lanes"][0]["branch_prefix"], "mtr-test/generic")
             self.assertEqual(
                 manifest["lanes"][0]["repository_id"], "qwen-redaction-standalone"
@@ -257,6 +259,20 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 "START_RESERVATION_REQUESTED",
             )
             self.assertTrue(closeout["source_repositories_unchanged"])
+            with self.assertRaisesRegex(
+                FinalExecutionError,
+                "QUALIFICATION_RELEASE_REAL_EXECUTION_FORBIDDEN",
+            ):
+                _validate_manifest(
+                    packet,
+                    manifest,
+                    packet / "mtr-dogfood-product-lane.pyz",
+                    ROUTER,
+                    QWEN,
+                    qualification_only=False,
+                )
+            execution_manifest = dict(manifest)
+            execution_manifest["qualification_release_only"] = False
             dirty_release = {
                 "schema_version": "1.0.0",
                 "source_head": manifest["runtime_release"]["source_head"],
@@ -273,7 +289,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 ):
                     _validate_manifest(
                         packet,
-                        manifest,
+                        execution_manifest,
                         packet / "mtr-dogfood-product-lane.pyz",
                         ROUTER,
                         QWEN,

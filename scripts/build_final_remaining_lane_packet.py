@@ -113,6 +113,7 @@ def build(
     route_id: str,
     branch_prefix: str,
     historical_accounting: dict[str, Any],
+    qualification_release_only: bool,
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     if (
@@ -125,6 +126,7 @@ def build(
         or any(character.isspace() for character in source_lane_id)
         or not isinstance(historical_accounting, dict)
         or any(not isinstance(key, str) or not key for key in historical_accounting)
+        or not isinstance(qualification_release_only, bool)
     ):
         raise RuntimeError("PRODUCT_ROUTE_IDENTIFIER_INVALID")
     branch_check = subprocess.run(
@@ -221,6 +223,7 @@ def build(
         "maximum_new_starts": 1,
         "no_retry": True,
         "stop_on_first_failure": True,
+        "qualification_release_only": qualification_release_only,
         "pre_reservation_failure_starts_consumed": 0,
         "reserved_failed_start_remains_consumed": True,
         "historical_accounting": historical_accounting,
@@ -304,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--historical-accounting-json", default="{}"
     )
+    parser.add_argument("--qualification-release-only", action="store_true")
     args = parser.parse_args(argv)
     historical_accounting = json.loads(args.historical_accounting_json)
     if not isinstance(historical_accounting, dict):
@@ -317,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         route_id=args.route_id,
         branch_prefix=args.branch_prefix,
         historical_accounting=historical_accounting,
+        qualification_release_only=args.qualification_release_only,
     )
     sys.stdout.buffer.write(canonical(value))
     return 0

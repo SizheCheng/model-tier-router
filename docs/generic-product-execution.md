@@ -13,6 +13,9 @@ runtime contains no product-lane dispatch table.
   and sends no model request.
 - A real execution is rejected unless the runtime was built from a clean committed
   source tree and launched from a verified ordinary PowerShell ancestry.
+- A component qualification packet built with `--qualification-release-only`
+  permanently rejects real execution. A product campaign must be built separately
+  without that flag and with its own explicit authority and historical accounting.
 - The source packet, runtime, task, decision, source repositories, result root, and
   bounded write aliases are hash- or path-bound before reservation.
 - The model returns proposed UTF-8 content only. The host owns `lane_id`, validates
