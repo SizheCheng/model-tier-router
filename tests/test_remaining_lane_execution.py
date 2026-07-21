@@ -198,6 +198,8 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                     str(QWEN),
                     "--route-id",
                     "TEST_GENERIC_PRODUCT_EXECUTION_R1",
+                    "--historical-accounting-json",
+                    '{"prior_consumed_starts":2}',
                     "--branch-prefix",
                     "mtr-test/generic",
                 ],
@@ -214,7 +216,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(manifest["execution_order"], ["qwen-docx-hidden-elements-r1"])
             self.assertEqual(manifest["maximum_new_starts"], 1)
             self.assertEqual(manifest["route_id"], "TEST_GENERIC_PRODUCT_EXECUTION_R1")
-            self.assertEqual(manifest["historical_accounting"], {})
+            self.assertEqual(manifest["historical_accounting"], {"prior_consumed_starts": 2})
             self.assertEqual(manifest["lanes"][0]["branch_prefix"], "mtr-test/generic")
             self.assertEqual(
                 manifest["lanes"][0]["repository_id"], "qwen-redaction-standalone"

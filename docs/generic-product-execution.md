@@ -37,6 +37,7 @@ python -B scripts/build_product_lane_packet.py `
   --source-packet C:\path\to\frozen-source-packet `
   --source-lane-id inventory-api-product-r1 `
   --route-id INVENTORY_API_PRODUCT_EXECUTION_R1 `
+  --historical-accounting-json '{}' `
   --branch-prefix mtr-product/inventory
 ```
 

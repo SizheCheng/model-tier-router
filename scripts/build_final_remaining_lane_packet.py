@@ -112,6 +112,7 @@ def build(
     source_lane_id: str,
     route_id: str,
     branch_prefix: str,
+    historical_accounting: dict[str, Any],
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     if (
@@ -122,6 +123,8 @@ def build(
         )
         or not source_lane_id
         or any(character.isspace() for character in source_lane_id)
+        or not isinstance(historical_accounting, dict)
+        or any(not isinstance(key, str) or not key for key in historical_accounting)
     ):
         raise RuntimeError("PRODUCT_ROUTE_IDENTIFIER_INVALID")
     branch_check = subprocess.run(
@@ -220,14 +223,7 @@ def build(
         "stop_on_first_failure": True,
         "pre_reservation_failure_starts_consumed": 0,
         "reserved_failed_start_remains_consumed": True,
-        "historical_accounting": (
-            {
-                "r5_ordinal_1_permanently_consumed": True,
-                "r5_ordinal_1_reclaimed": False,
-            }
-            if route_id == DEFAULT_ROUTE_ID
-            else {}
-        ),
+        "historical_accounting": historical_accounting,
         "router_source_head": router_state["head"],
         "model_mapping": source_manifest["model_mapping"],
         "commit_identity": {
@@ -305,7 +301,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-lane-id", default=DEFAULT_SOURCE_LANE_ID)
     parser.add_argument("--route-id", default=DEFAULT_ROUTE_ID)
     parser.add_argument("--branch-prefix", default="mtr-product")
+    parser.add_argument(
+        "--historical-accounting-json", default="{}"
+    )
     args = parser.parse_args(argv)
+    historical_accounting = json.loads(args.historical_accounting_json)
+    if not isinstance(historical_accounting, dict):
+        raise RuntimeError("HISTORICAL_ACCOUNTING_INVALID")
     value = build(
         Path(args.output_directory).resolve(),
         Path(args.router_repository).resolve(),
@@ -314,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         source_lane_id=args.source_lane_id,
         route_id=args.route_id,
         branch_prefix=args.branch_prefix,
+        historical_accounting=historical_accounting,
     )
     sys.stdout.buffer.write(canonical(value))
     return 0
