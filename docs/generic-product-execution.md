@@ -63,3 +63,54 @@ contract drift, source mutation, retry, or accounting ambiguity.
 Legacy Qwen- and two-lane-named entrypoints remain compatibility adapters. New
 campaigns must use `product-lane`, `mtr-dogfood-product-lane.pyz`, and
 `RUN_PRODUCT_LANE.ps1`.
+
+## Declarative product contract
+
+New products do not need a predecessor packet or a Python source edit. Copy
+`examples/product-lane-contract.example.json`, bind the task to the clean product
+repository HEAD, enumerate exact target paths and aliases in the lane policy, and
+provide the Router advisory request. Build a qualification-only packet with:
+
+~~~powershell
+python -B scripts/build_product_lane_packet.py `
+  --output-directory C:\path\to\packet `
+  --router-repository C:\path\to\model-tier-router `
+  --source-repository C:\path\to\product `
+  --product-contract C:\path\to\product-contract.json
+~~~
+
+The builder obtains and freezes the live Router decision, freezes a single-lane
+host materialization policy inside the packet, verifies that policy aliases match
+the task's exact bounded paths, binds all inputs by SHA-256, and builds the
+reproducible product artifact. A contract with
+`qualification_release_only: true` can never be used for real execution.
+
+The schema is `schemas/product-lane-contract.schema.json`. The legacy
+`--source-packet` path remains supported only for historical compatibility.
+
+## Default-use promotion gate
+
+The component is eligible for controlled single-product canaries after a
+qualification-only packet reaches `START_RESERVATION_REQUESTED` with zero process
+starts and zero model requests. It becomes eligible for default product
+development only after three accepted, separately authorized real canaries:
+
+- three distinct product repositories;
+- at least two media families;
+- the same runtime source HEAD and artifact SHA-256;
+- exactly one consumed start per canary, no retry, and stop-on-first-failure;
+- clean source repositories unchanged by the campaign.
+
+Evaluate completed packets without starting a model:
+
+~~~powershell
+python -B scripts/evaluate_product_readiness.py `
+  --packet-root C:\path\to\canary-1 `
+  --packet-root C:\path\to\canary-2 `
+  --packet-root C:\path\to\canary-3 `
+  --output C:\path\to\product-readiness.json
+~~~
+
+The evaluator fails closed and reports
+`eligible_for_default_product_development: false` until every gate is satisfied.
+It never launches a model or mutates a product repository.

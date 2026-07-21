@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "route_id": "EXAMPLE_PRODUCT_LANE_R1",
+  "repository_id": "example-product",
+  "branch_prefix": "mtr-product/example",
+  "task": {
+    "schema_version": "1.0.0",
+    "case_id": "example-product-lane-r1",
+    "repository": "example-product",
+    "baseline_head": "REPLACE_WITH_40_CHARACTER_GIT_HEAD",
+    "title": "add a bounded product change",
+    "task_text": "Implement the exact bounded change and preserve all existing safety boundaries.",
+    "changed_path_patterns": ["src/example.py"],
+    "risk": "LOW_RISK",
+    "validator_plan_digest": "REPLACE_WITH_VALIDATOR_PLAN_DIGEST",
+    "model_timeout_seconds": 1200,
+    "validator_plan": {"commands": [{"name": "focused", "layer": "focused", "command": ["python", "-B", "-m", "unittest", "-v"], "timeout_seconds": 300}]}
+  },
+  "routing_request": {
+    "schema_version": "model_tier_router_advisory_request_v1alpha1",
+    "request_id": "example-product-lane-r1",
+    "requirements": {"maximum_cost_class": "medium", "modalities": ["text"], "tool_support": true},
+    "preferences": ["higher_reasoning"],
+    "evidence": {"modalities": true, "tool_support": true}
+  },
+  "lane_policy": {
+    "schema_version": "1.0.0",
+    "model_output_success_guaranteed": false,
+    "safety_independent_of_model_output_capacity": true,
+    "lanes": [{
+      "lane_id": "example-product-lane-r1",
+      "maximum_file_count": 1,
+      "maximum_aggregate_content_bytes": 32768,
+      "maximum_serialized_result_bytes": 204800,
+      "required_validation_expectations": 1,
+      "aliases": [{
+        "target_alias": "src_example_py",
+        "relative_path": "src/example.py",
+        "media_type": "text/x-python",
+        "encoding": "UTF-8",
+        "allowed_line_endings": ["LF", "CRLF"],
+        "exact_content_bytes": null,
+        "maximum_content_bytes": 32768,
+        "maximum_serialized_bytes": 204800,
+        "nul_prohibited": true,
+        "content_requirements": {"minimum_utf8_bytes": 1, "exact_utf8_content": null, "required_casefold_substrings": [], "forbidden_casefold_substrings": []}
+      }]
+    }]
+  },
+  "historical_accounting": {},
+  "qualification_release_only": true
+}

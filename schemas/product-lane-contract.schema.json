@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generic product lane contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "route_id", "repository_id", "branch_prefix", "task", "routing_request", "lane_policy", "historical_accounting", "qualification_release_only"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "route_id": {"type": "string", "pattern": "^[A-Z0-9_-]+$", "minLength": 1},
+    "repository_id": {"type": "string", "minLength": 1},
+    "branch_prefix": {"type": "string", "minLength": 1},
+    "task": {"type": "object"},
+    "routing_request": {"type": "object"},
+    "lane_policy": {"type": "object"},
+    "historical_accounting": {"type": "object"},
+    "qualification_release_only": {"type": "boolean"}
+  }
+}

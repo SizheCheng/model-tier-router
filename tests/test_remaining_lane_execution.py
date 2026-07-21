@@ -15,6 +15,7 @@ from mtr_dogfood.remaining_lane_execution import (
     _validate_manifest,
     self_test,
 )
+from mtr_dogfood.validation import freeze_validator_plan
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -259,6 +260,31 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 "START_RESERVATION_REQUESTED",
             )
             self.assertTrue(closeout["source_repositories_unchanged"])
+            escaping_manifest = json.loads(json.dumps(manifest))
+            escaping_manifest["lane_policy"]["snapshot"] = str(
+                (base / "outside-policy.json").resolve()
+            )
+            with mock.patch(
+                "mtr_dogfood.remaining_lane_execution._release_metadata",
+                return_value={
+                    "schema_version": "1.0.0",
+                    "source_head": manifest["runtime_release"]["source_head"],
+                    "source_dirty": manifest["runtime_release"]["source_dirty"],
+                    "entrypoint": "product-lane",
+                },
+            ):
+                with self.assertRaisesRegex(
+                    FinalExecutionError,
+                    "FROZEN_INPUT_PATH_INVALID",
+                ):
+                    _validate_manifest(
+                        packet,
+                        escaping_manifest,
+                        packet / "mtr-dogfood-product-lane.pyz",
+                        ROUTER,
+                        QWEN,
+                        qualification_only=True,
+                    )
             with self.assertRaisesRegex(
                 FinalExecutionError,
                 "QUALIFICATION_RELEASE_REAL_EXECUTION_FORBIDDEN",
@@ -295,6 +321,152 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                         QWEN,
                         qualification_only=False,
                     )
+
+
+    def test_declarative_contract_supports_an_unlisted_product_and_path(self):
+        if not ROUTER.is_dir():
+            self.skipTest("live router repository is unavailable")
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / "inventory-product"
+            source.mkdir()
+            (source / "src").mkdir()
+            (source / "src" / "inventory.ts").write_text(
+                "export const inventory = [];\n", encoding="utf-8"
+            )
+            for command in (
+                ["git", "init", "-q", "-b", "main"],
+                ["git", "config", "user.name", "Product Fixture"],
+                ["git", "config", "user.email", "fixture.invalid"],
+                ["git", "add", "src/inventory.ts"],
+                ["git", "commit", "-q", "-m", "baseline"],
+            ):
+                completed = subprocess.run(
+                    command, cwd=source, capture_output=True, text=True, check=False
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=source,
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            validator_plan = {
+                "commands": [{
+                    "name": "shape", "layer": "focused",
+                    "command": [
+                        "python", "-B", "-c",
+                        "from pathlib import Path; assert Path('src/inventory.ts').is_file()",
+                    ],
+                    "timeout_seconds": 60,
+                }]
+            }
+            lane_id = "inventory-typescript-contract-r1"
+            contract = {
+                "schema_version": "1.0.0",
+                "route_id": "INVENTORY_TYPESCRIPT_CONTRACT_R1",
+                "repository_id": "inventory-product",
+                "branch_prefix": "mtr-product/inventory",
+                "task": {
+                    "schema_version": "1.0.0", "case_id": lane_id,
+                    "repository": "inventory-product", "baseline_head": head,
+                    "title": "update inventory",
+                    "task_text": "Add one synthetic inventory entry.",
+                    "changed_path_patterns": ["src/inventory.ts"],
+                    "risk": "LOW_RISK", "validator_plan": validator_plan,
+                    "validator_plan_digest": freeze_validator_plan(validator_plan),
+                    "model_timeout_seconds": 300,
+                },
+                "routing_request": {
+                    "schema_version": "model_tier_router_advisory_request_v1alpha1",
+                    "request_id": lane_id,
+                    "requirements": {
+                        "maximum_cost_class": "medium",
+                        "modalities": ["text"], "tool_support": True,
+                    },
+                    "preferences": ["higher_reasoning"],
+                    "evidence": {"modalities": True, "tool_support": True},
+                },
+                "lane_policy": {
+                    "schema_version": "1.0.0",
+                    "model_output_success_guaranteed": False,
+                    "safety_independent_of_model_output_capacity": True,
+                    "lanes": [{
+                        "lane_id": lane_id, "maximum_file_count": 1,
+                        "maximum_aggregate_content_bytes": 32768,
+                        "maximum_serialized_result_bytes": 204800,
+                        "required_validation_expectations": 1,
+                        "aliases": [{
+                            "target_alias": "inventory_typescript",
+                            "relative_path": "src/inventory.ts",
+                            "media_type": "text/typescript", "encoding": "UTF-8",
+                            "allowed_line_endings": ["LF", "CRLF"],
+                            "exact_content_bytes": None,
+                            "maximum_content_bytes": 32768,
+                            "maximum_serialized_bytes": 204800,
+                            "nul_prohibited": True,
+                            "content_requirements": {
+                                "minimum_utf8_bytes": 1,
+                                "exact_utf8_content": None,
+                                "required_casefold_substrings": ["inventory"],
+                                "forbidden_casefold_substrings": [],
+                            },
+                        }],
+                    }],
+                },
+                "historical_accounting": {"prior_consumed_starts": 0},
+                "qualification_release_only": True,
+            }
+            contract_path = base / "product-contract.json"
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+            packet = base / "packet"
+            build = subprocess.run(
+                [
+                    sys.executable, "-B",
+                    str(ROOT / "scripts" / "build_product_lane_packet.py"),
+                    "--output-directory", str(packet),
+                    "--router-repository", str(ROUTER),
+                    "--source-repository", str(source),
+                    "--product-contract", str(contract_path),
+                ],
+                cwd=ROOT, capture_output=True, text=True, check=False, timeout=240,
+            )
+            self.assertEqual(build.returncode, 0, build.stderr)
+            manifest = json.loads(
+                (packet / "FINAL_EXECUTION_MANIFEST.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["lanes"][0]["lane_id"], lane_id)
+            self.assertEqual(
+                manifest["historical_input"]["input_mode"],
+                "declarative_product_contract_v1",
+            )
+            packet_policy = json.loads(
+                (packet / manifest["lane_policy"]["snapshot"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                packet_policy["lanes"][0]["aliases"][0]["relative_path"],
+                "src/inventory.ts",
+            )
+            result = packet / "results" / "qualification"
+            qualify = subprocess.run(
+                [
+                    sys.executable, "-B",
+                    str(packet / "mtr-dogfood-product-lane.pyz"),
+                    "--qualification-only", "--packet-root", str(packet),
+                    "--router-repository", str(ROUTER),
+                    "--source-repository", str(source),
+                    "--workspace-parent", str(base / "workspaces"),
+                    "--result-root", str(result),
+                ],
+                cwd=ROOT, capture_output=True, text=True, check=False, timeout=240,
+            )
+            self.assertEqual(qualify.returncode, 0, qualify.stderr + qualify.stdout)
+            closeout = json.loads(qualify.stdout)
+            self.assertEqual(closeout["status"], "passed")
+            self.assertFalse(closeout["campaign_started"])
+            self.assertEqual(closeout["starts_consumed"], 0)
+            self.assertEqual(
+                closeout["outcomes"][0]["qualification_state"],
+                "START_RESERVATION_REQUESTED",
+            )
 
 
 if __name__ == "__main__":

@@ -324,9 +324,28 @@ TARGET_ALIAS_BY_PATH = {
 }
 
 
-def _target_aliases(paths: list[str]) -> dict[str, str]:
+def _target_aliases(
+    paths: list[str],
+    declared_aliases: dict[str, str] | None = None,
+) -> dict[str, str]:
+    exact_paths = _exact_bounded_write_paths(paths)
+    if declared_aliases is not None:
+        if (
+            not isinstance(declared_aliases, dict)
+            or not declared_aliases
+            or any(
+                not isinstance(alias, str)
+                or not alias
+                or not isinstance(path, str)
+                for alias, path in declared_aliases.items()
+            )
+            or len(set(declared_aliases.values())) != len(declared_aliases)
+            or set(declared_aliases.values()) != set(exact_paths)
+        ):
+            raise ContractError("declared aliases do not match bounded write paths")
+        return dict(declared_aliases)
     aliases: dict[str, str] = {}
-    for path in _exact_bounded_write_paths(paths):
+    for path in exact_paths:
         alias = TARGET_ALIAS_BY_PATH.get(path)
         if alias is None or alias in aliases:
             raise ContractError("bounded write path has no unique immutable alias")
@@ -805,12 +824,19 @@ def _task_payload(case: dict[str, Any]) -> dict[str, Any]:
     return {key: case[key] for key in keys}
 
 
-def _child_prompt(case: dict[str, Any], worktree: Path) -> str:
+def _child_prompt(
+    case: dict[str, Any],
+    worktree: Path,
+    target_aliases: dict[str, str] | None = None,
+) -> str:
     validators = case["validator_plan"]
     allowed_write_paths = _exact_bounded_write_paths(
         case["changed_path_patterns"]
     )
-    target_aliases = _target_aliases(allowed_write_paths)
+    if target_aliases is None:
+        target_aliases = _target_aliases(allowed_write_paths)
+    elif set(target_aliases.values()) != set(allowed_write_paths):
+        raise ContractError("prompt aliases do not match bounded write paths")
     return f"""Propose one bounded task result from this read-only assigned worktree:
 {worktree}
 
@@ -1064,7 +1090,10 @@ def _run_attempt(
         allowed_write_paths = _exact_bounded_write_paths(
             case["changed_path_patterns"]
         )
-        target_aliases = _target_aliases(allowed_write_paths)
+        target_aliases = _target_aliases(
+            allowed_write_paths,
+            host_alias_map(lane),
+        )
         if target_aliases != host_alias_map(lane):
             raise RuntimeError("HOST_MATERIALIZATION_LANE_POLICY_MISMATCH")
         local_writer = metadata / Path(BOUNDED_WRITER_RELATIVE).name
@@ -1119,7 +1148,7 @@ def _run_attempt(
             "codex.exe", worktree, mapping["model"],
             mapping["reasoning_effort"], local_schema, final_output,
         )
-        prompt = _child_prompt(case, worktree)
+        prompt = _child_prompt(case, worktree, target_aliases)
         forbidden_paths = [
             root, *[entry["path"] for entry in contract["repositories"].values()],
             *contract["denylist"],

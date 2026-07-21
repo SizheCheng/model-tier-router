@@ -11,12 +11,13 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from .codex_runner import resolve_codex_executable
 from .config import canonical_json_bytes, is_contained, load_json, same_path
 from .external_runner import _run_attempt, default_launcher
+from .host_materialization import lane_contract as host_lane_contract, load_lane_policy
 from .process_ancestry import verify_standalone_powershell, windows_process_provider
 from .qualification import ASSETS, _resource_bytes, verify_packet
 from .router_adapter import assess_live, verify_decision
@@ -38,6 +39,25 @@ def _utc_now() -> str:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _packet_file(packet: Path, relative: Any) -> Path:
+    if not isinstance(relative, str):
+        raise FinalExecutionError("FROZEN_INPUT_PATH_INVALID")
+    parts = PurePosixPath(relative).parts
+    if (
+        not relative
+        or relative.startswith("/")
+        or "\\" in relative
+        or ":" in relative
+        or ".." in parts
+        or "results" in parts
+    ):
+        raise FinalExecutionError("FROZEN_INPUT_PATH_INVALID")
+    target = packet.joinpath(*parts).resolve()
+    if not is_contained(packet, target):
+        raise FinalExecutionError("FROZEN_INPUT_PATH_INVALID")
+    return target
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -201,11 +221,15 @@ def _release_metadata() -> dict[str, Any]:
     )
 
 
-def _materialize_support(root: Path) -> None:
+def _materialize_support(root: Path, packet: Path, manifest: dict[str, Any]) -> None:
     for name, relative in ASSETS.items():
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(_resource_bytes(name))
+    policy_binding = manifest["lane_policy"]
+    policy_source = packet / policy_binding["snapshot"]
+    policy_target = root / "config" / "host-materialization-lanes.json"
+    policy_target.write_bytes(policy_source.read_bytes())
 
 
 def self_test() -> dict[str, Any]:
@@ -263,6 +287,7 @@ def _validate_manifest(
         or not lanes[0].get("source_branch")
         or not isinstance(lanes[0].get("branch_prefix"), str)
         or not lanes[0].get("branch_prefix")
+        or not isinstance(manifest.get("lane_policy"), dict)
     ):
         raise FinalExecutionError("FINAL_EXECUTION_MANIFEST_INVALID")
     if not qualification_only and manifest.get("qualification_release_only", False):
@@ -288,10 +313,21 @@ def _validate_manifest(
         if router != router_repository:
             raise FinalExecutionError("ROUTER_REPOSITORY_BINDING_DRIFT")
         for field in ("task_snapshot", "decision_snapshot"):
-            path = packet / str(lane[field])
+            path = _packet_file(packet, lane[field])
             digest_field = field.replace("snapshot", "sha256")
             if not path.is_file() or _sha256(path) != lane.get(digest_field):
                 raise FinalExecutionError("FROZEN_INPUT_HASH_DRIFT")
+    policy_binding = manifest["lane_policy"]
+    policy_path = _packet_file(packet, policy_binding.get("snapshot"))
+    if (
+        not policy_path.is_file()
+        or _sha256(policy_path) != policy_binding.get("sha256")
+    ):
+        raise FinalExecutionError("FROZEN_LANE_POLICY_HASH_DRIFT")
+    policy = load_lane_policy(policy_path)
+    if len(policy["lanes"]) != 1 or policy["lanes"][0]["lane_id"] != lane_ids[0]:
+        raise FinalExecutionError("FROZEN_LANE_POLICY_BINDING_DRIFT")
+    host_lane_contract(policy, lane_ids[0])
 
 
 def _run_lanes(
@@ -306,7 +342,7 @@ def _run_lanes(
     qualification_only: bool,
     launcher: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
-    _materialize_support(result_root)
+    _materialize_support(result_root, packet, manifest)
     binding = manifest["lanes"][0]
     lane_id = binding["lane_id"]
     repository_id = binding["repository_id"]
