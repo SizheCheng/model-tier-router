@@ -106,6 +106,21 @@ SHELL_WRITE_OPERATION_RE = re.compile(
     r"tee|truncate|git\s+(?:add|apply|checkout|switch|branch|restore|mv|rm|init))\b"
     r"|(?:^|[^\w])open\s*\(|\.write\s*\(|(?<![<>=])>{1,2}(?![=])"
 )
+SAFE_NODE_STDIO_WRITE_RE = re.compile(
+    r"(?i)\bprocess\.(?:stdout|stderr)\.write\s*\("
+)
+SAFE_POWERSHELL_BITCONVERTER_REPLACE_RE = re.compile(
+    r"(?i)\[BitConverter\]::ToString\s*\(\s*"
+    r"\$[A-Za-z_][A-Za-z0-9_:]*\s*\)\s*\.Replace\s*\("
+)
+
+
+def _contains_direct_write_operation(value: str) -> bool:
+    inspection = SAFE_NODE_STDIO_WRITE_RE.sub("safe_stdio_emit(", value)
+    inspection = SAFE_POWERSHELL_BITCONVERTER_REPLACE_RE.sub(
+        "safe_bitconverter_format(", inspection
+    )
+    return SHELL_WRITE_OPERATION_RE.search(inspection) is not None
 
 
 def default_launcher(**kwargs: Any) -> dict[str, Any]:
@@ -663,7 +678,7 @@ def _scan_child_commands(
             child_exit_code if isinstance(child_exit_code, int) else None,
         )
         direct_write = bool(
-            SHELL_WRITE_OPERATION_RE.search(inspection_text)
+            _contains_direct_write_operation(inspection_text)
             and not write_transport["recognized"]
         )
         write_capable = bool(write_transport["recognized"] or direct_write)

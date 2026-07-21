@@ -39,15 +39,26 @@ class ChildCommandScannerTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def scan_event(self, event: dict, protected: list[Path] | None = None):
+    def scan_event(
+        self,
+        event: dict,
+        protected: list[Path] | None = None,
+        model_read_only: bool = False,
+    ):
         self.events.write_text(json.dumps(event) + "\n", encoding="utf-8")
         return _scan_child_commands(
             self.events,
             protected or [],
             self.worktree,
+            model_read_only=model_read_only,
         )
 
-    def scan_command(self, command: str, protected: list[Path] | None = None):
+    def scan_command(
+        self,
+        command: str,
+        protected: list[Path] | None = None,
+        model_read_only: bool = False,
+    ):
         return self.scan_event({
             "type": "item.completed",
             "item": {
@@ -55,7 +66,7 @@ class ChildCommandScannerTests(unittest.TestCase):
                 "type": "command_execution",
                 "command": command,
             },
-        }, protected)
+        }, protected, model_read_only)
 
     def assert_external_mode(self, script: str, expected_mode: str):
         outside = self.root / "outside" / "target.txt"
@@ -405,6 +416,51 @@ class ChildCommandScannerTests(unittest.TestCase):
         })
         self.assertFalse(scan["external_path_access_detected"])
         self.assertEqual(scan["command_records"], [])
+
+    def test_bitconverter_hash_format_is_not_a_direct_write(self):
+        scan = self.scan_command(
+            powershell(
+                "$sha = [byte[]](0); "
+                "[BitConverter]::ToString($sha).Replace('-', '').ToLowerInvariant()"
+            ),
+            model_read_only=True,
+        )
+        self.assertFalse(scan["model_direct_write_attempt_detected"])
+        self.assertFalse(scan["bounded_write_violation_detected"])
+        self.assertFalse(scan["command_records"][0]["write_capable"])
+
+    def test_node_stdout_hash_emit_is_not_a_direct_write(self):
+        scan = self.scan_command(
+            "node -e \"process.stdout.write(require('crypto')"
+            ".createHash('sha256').update('WORKSPACE_WRITE_OK\\n')"
+            ".digest('hex'))\"",
+            model_read_only=True,
+        )
+        self.assertFalse(scan["model_direct_write_attempt_detected"])
+        self.assertFalse(scan["bounded_write_violation_detected"])
+        self.assertFalse(scan["command_records"][0]["write_capable"])
+
+    def test_safe_hash_format_does_not_mask_a_real_write(self):
+        scan = self.scan_command(
+            powershell(
+                "$sha = [byte[]](0); "
+                "[BitConverter]::ToString($sha).Replace('-', ''); "
+                "Set-Content -LiteralPath '.\\smoke\\result.txt' -Value blocked"
+            ),
+            model_read_only=True,
+        )
+        self.assertTrue(scan["model_direct_write_attempt_detected"])
+        self.assertTrue(scan["bounded_write_security_violation_detected"])
+        self.assertTrue(scan["command_records"][0]["write_capable"])
+
+    def test_safe_stdio_emit_does_not_mask_another_stream_write(self):
+        scan = self.scan_command(
+            "node -e \"process.stdout.write('ok'); stream.write('blocked')\"",
+            model_read_only=True,
+        )
+        self.assertTrue(scan["model_direct_write_attempt_detected"])
+        self.assertTrue(scan["bounded_write_security_violation_detected"])
+        self.assertTrue(scan["command_records"][0]["write_capable"])
 
     def test_parent_runner_schema_and_output_paths_are_not_child_commands(self):
         scan = self.scan_event({
