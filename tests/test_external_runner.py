@@ -206,7 +206,7 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertEqual(
             closeout["hard_stop_code"],
-            "PROCESS_ANCESTRY_INCOMPLETE",
+            "ANCESTRY_PARENT_MISSING_BEFORE_TRUST_ANCHOR",
         )
         self.assertFalse(closeout["nested_codex_ancestor_detected"])
         self.assertEqual(

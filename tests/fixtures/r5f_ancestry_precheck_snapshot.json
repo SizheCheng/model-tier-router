@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "R5F_ANCESTRY_PRECHECK_20260721T060914Z",
+  "captured_at_utc": "2026-07-21T06:09:14Z",
+  "old_semantics_classification": "ANCESTRY_INCOMPLETE",
+  "missing_parent_pid": 4772,
+  "actual_codex_ancestor": false,
+  "expected_explorer_path": "C:\\WINDOWS\\explorer.exe",
+  "processes": [
+    {
+      "pid": 24572,
+      "parent_pid": 8404,
+      "name": "powershell.exe",
+      "executable_path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "creation_time_utc": "2026-07-21T06:09:11.2256520Z",
+      "session_id": 1,
+      "user_sid": "S-1-5-21-3094882294-810501253-2852307982-1001",
+      "process_alive": true,
+      "parent_present_in_snapshot": true,
+      "shell_window_process_id": 8404,
+      "is_current_session_shell": false,
+      "signature_status": "",
+      "signer_subject": "",
+      "executable_sha256": "",
+      "identity_query_status": "captured",
+      "snapshot_captured_at_utc": "2026-07-21T06:09:14Z"
+    },
+    {
+      "pid": 8404,
+      "parent_pid": 4772,
+      "name": "explorer.exe",
+      "executable_path": "C:\\WINDOWS\\Explorer.EXE",
+      "creation_time_utc": "2026-07-20T22:51:28.5323206Z",
+      "session_id": 1,
+      "user_sid": "S-1-5-21-3094882294-810501253-2852307982-1001",
+      "process_alive": true,
+      "parent_present_in_snapshot": false,
+      "shell_window_process_id": 8404,
+      "is_current_session_shell": true,
+      "signature_status": "Valid",
+      "signer_subject": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "executable_sha256": "80b21e6f70524efd84037a4eda479ddc4bc55c0d6c1a33439b85a554e740f30c",
+      "identity_query_status": "complete",
+      "snapshot_captured_at_utc": "2026-07-21T06:09:14Z"
+    }
+  ]
+}
