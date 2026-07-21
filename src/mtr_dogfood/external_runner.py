@@ -39,6 +39,7 @@ from .process_ancestry import (
     NestedCodexAncestorError, ProcessAncestryError, ProcessProvider,
     verify_standalone_powershell, windows_process_provider,
 )
+from .source_integrity import repository_integrity_status
 from .r2_contract import (
     PayloadValidationError, classify_model_reported_blocker,
     validate_child_transport, validate_launch_payloads,
@@ -1170,16 +1171,33 @@ def _run_attempt(
             "receipts": [],
             "errors": ["host materialization did not complete"],
         }
-        source_repositories_unchanged = all(
-            not Path(entry["path"]).exists()
-            or (
-                _git(entry["path"], "rev-parse", "HEAD", check=False)
-                == entry["baseline_head"]
-                and not _git(
-                    entry["path"], "status", "--porcelain=v2", check=False
+        source_checks: list[dict[str, Any]] = []
+        for repository_id, entry in contract["repositories"].items():
+            repository_path = Path(entry["path"])
+            unchanged = bool(
+                not repository_path.exists()
+                or (
+                    _git(repository_path, "rev-parse", "HEAD", check=False)
+                    == entry["baseline_head"]
+                    and not _git(
+                        repository_path, "status", "--porcelain=v2", check=False
+                    )
                 )
             )
-            for entry in contract["repositories"].values()
+            source_checks.append({
+                "repository": repository_id,
+                "unchanged": unchanged,
+            })
+        source_repositories_unchanged = all(
+            row["unchanged"] for row in source_checks
+        )
+        source_integrity = repository_integrity_status(
+            checks_executed=True,
+            unchanged=source_repositories_unchanged,
+            mismatches=[
+                row["repository"] for row in source_checks
+                if not row["unchanged"]
+            ],
         )
         try:
             infrastructure = _normalize_infrastructure(
@@ -1372,6 +1390,7 @@ def _run_attempt(
             "model_workspace_read_only": True,
             "model_workspace_mutation_detected": model_workspace_mutated,
             "source_repositories_unchanged_before_materialization": source_repositories_unchanged,
+            "source_repository_integrity": source_integrity,
             "host_materialization_transaction": transaction_receipt,
             "bounded_write_transport_unchanged": bounded_write_transport_unchanged,
             "bounded_writer_receipt_validation": writer_receipt_validation,
@@ -1789,6 +1808,9 @@ def _empty_closeout(contract: dict[str, Any]) -> dict[str, Any]:
         "status": "BLOCKED_MODEL_TIER_ROUTER_DOGFOOD_R3_EXTERNAL_BEFORE_FIXTURE_SMOKE",
         "ordinary_powershell_ancestor_verified": False,
         "nested_codex_ancestor_detected": False,
+        "source_repository_integrity": repository_integrity_status(
+            checks_executed=False, unchanged=None
+        ),
         "fixture_smoke": {},
         "maximum_child_process_starts": contract["maximum_new_codex_exec_process_starts"],
         "child_process_starts_used": 0,
@@ -1895,15 +1917,25 @@ class ExternalRunner:
                 "ancestry_receipt": receipt,
             }
             return self._finish(closeout, 2)
-        except ProcessAncestryError:
-            closeout["hard_stop_code"] = "PROCESS_ANCESTRY_NOT_VERIFIED"
-            closeout["remaining_blockers"] = ["PROCESS_ANCESTRY_NOT_VERIFIED"]
+        except ProcessAncestryError as exc:
+            receipt = getattr(exc, "receipt", {})
+            closeout["hard_stop_code"] = exc.code
+            closeout["remaining_blockers"] = [exc.code]
+            closeout["fixture_smoke"] = {
+                "created": False,
+                "ancestry_receipt": receipt,
+            }
             return self._finish(closeout, 2)
 
         closeout["ordinary_powershell_ancestor_verified"] = True
         try:
             preflight = _preflight(contract, self.root)
             closeout["primary_repository_final_states"] = preflight
+            closeout["source_repository_integrity"] = (
+                repository_integrity_status(
+                    checks_executed=True, unchanged=True
+                )
+            )
         except (ContractError, GitContractError, RuntimeError) as exc:
             code = str(exc) if str(exc).isupper() else "EXTERNAL_PREFLIGHT_FAILED"
             closeout["hard_stop_code"] = code

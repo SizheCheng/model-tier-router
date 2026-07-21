@@ -139,8 +139,20 @@ class RuntimeContractTests(unittest.TestCase):
         closeout_path = ROOT / self.contract["reporting"]["closeout"]
         original_bytes = closeout_path.read_bytes() if closeout_path.exists() else None
         rows = {
-            100: {"pid": 100, "parent_pid": 90, "name": "powershell.exe"},
-            90: {"pid": 90, "parent_pid": 0, "name": "codex.exe"},
+            100: {
+                "pid": 100,
+                "parent_pid": 90,
+                "name": "powershell.exe",
+                "executable_path": r"C:\Windows\powershell.exe",
+                "creation_time_utc": "2026-07-21T00:03:00Z",
+            },
+            90: {
+                "pid": 90,
+                "parent_pid": 0,
+                "name": "codex.exe",
+                "executable_path": r"C:\Tools\codex.exe",
+                "creation_time_utc": "2026-07-21T00:02:00Z",
+            },
         }
         runner = ExternalRunner(
             CONTRACT_PATH,
@@ -167,6 +179,49 @@ class RuntimeContractTests(unittest.TestCase):
         else:
             self.assertEqual(closeout_path.read_bytes(), original_bytes)
 
+    def test_incomplete_ancestry_has_distinct_fail_closed_closeout(self):
+        closeout_path = ROOT / self.contract["reporting"]["closeout"]
+        rows = {
+            100: {
+                "pid": 100,
+                "parent_pid": 50,
+                "name": "powershell.exe",
+                "executable_path": r"C:\Windows\powershell.exe",
+                "creation_time_utc": "2026-07-21T00:03:00Z",
+            },
+        }
+        runner = ExternalRunner(
+            CONTRACT_PATH,
+            closeout_path,
+            100,
+            launcher=lambda **kwargs: self.fail("launcher must not run"),
+            executable_resolver=lambda: "fake-codex.exe",
+            process_provider=lambda pid: rows.get(pid),
+        )
+        with patch(
+            "mtr_dogfood.external_runner._preflight",
+            side_effect=AssertionError("preflight must not run"),
+        ), patch("mtr_dogfood.external_runner.write_json"):
+            closeout, exit_code = runner.run()
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(
+            closeout["hard_stop_code"],
+            "PROCESS_ANCESTRY_INCOMPLETE",
+        )
+        self.assertFalse(closeout["nested_codex_ancestor_detected"])
+        self.assertEqual(
+            closeout["source_repository_integrity"]["status"],
+            "not_evaluated",
+        )
+        self.assertNotIn(
+            "unchanged",
+            closeout["source_repository_integrity"],
+        )
+        self.assertFalse(
+            closeout["fixture_smoke"]["ancestry_receipt"][
+                "evidence_complete"
+            ]
+        )
     def test_out_of_scope_repository_path_is_denied(self):
         value = copy.deepcopy(self.contract)
         value["repositories"]["model-tier-router"]["path"] = value["denylist"][0]

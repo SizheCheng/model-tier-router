@@ -6,6 +6,7 @@
     "status",
     "ordinary_powershell_ancestor_verified",
     "nested_codex_ancestor_detected",
+    "source_repository_integrity",
     "fixture_smoke",
     "maximum_child_process_starts",
     "child_process_starts_used",
@@ -46,6 +47,17 @@
     ]},
     "ordinary_powershell_ancestor_verified": {"type": "boolean"},
     "nested_codex_ancestor_detected": {"type": "boolean"},
+    "source_repository_integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checks_executed", "mismatches"],
+      "properties": {
+        "status": {"type": "string", "enum": ["passed", "failed", "not_evaluated", "incomplete"]},
+        "checks_executed": {"type": "boolean"},
+        "unchanged": {"type": "boolean"},
+        "mismatches": {"type": "array", "items": {"type": "string"}}
+      }
+    },
     "fixture_smoke": {"type": "object"},
     "maximum_child_process_starts": {"type": "integer"},
     "child_process_starts_used": {"type": "integer"},
