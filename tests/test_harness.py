@@ -45,8 +45,10 @@ from mtr_dogfood.r2_contract import (
 from mtr_dogfood.r2_execution import _load_case
 from mtr_dogfood.router_adapter import (
     RouterDecisionError,
+    compute_decision_digest,
     map_profile,
     validate_decision,
+    verify_decision,
 )
 from mtr_dogfood.task_selection import arm_order
 from mtr_dogfood.validation import (
@@ -201,6 +203,55 @@ class RouterTests(unittest.TestCase):
             {"balanced"},
         )
         self.assertIn("dogfood_decision_digest", value)
+
+    def test_router_decision_digest_is_idempotent(self):
+        decision = validate_decision(
+            {
+                "status": "recommended",
+                "selected_profile": "balanced",
+                "execution_authorized": False,
+                "authorized_write_scope": [],
+            },
+            {"balanced"},
+        )
+        self.assertEqual(validate_decision(decision, {"balanced"}), decision)
+        self.assertEqual(
+            decision["dogfood_decision_digest"],
+            compute_decision_digest(decision),
+        )
+
+    def test_router_decision_verification_rejects_semantic_drift(self):
+        expected = validate_decision(
+            {
+                "status": "recommended",
+                "selected_profile": "balanced",
+                "execution_authorized": False,
+                "authorized_write_scope": [],
+            },
+            {"balanced", "premium"},
+        )
+        actual = dict(expected, selected_profile="premium")
+        actual["dogfood_decision_digest"] = compute_decision_digest(actual)
+        with self.assertRaisesRegex(
+            RouterDecisionError, "ROUTER_DECISION_SEMANTIC_DRIFT"
+        ):
+            verify_decision(actual, expected, {"balanced", "premium"})
+
+    def test_router_decision_verification_rejects_rehashed_digest(self):
+        expected = validate_decision(
+            {
+                "status": "recommended",
+                "selected_profile": "balanced",
+                "execution_authorized": False,
+                "authorized_write_scope": [],
+            },
+            {"balanced"},
+        )
+        actual = dict(expected, dogfood_decision_digest="0" * 64)
+        with self.assertRaisesRegex(
+            RouterDecisionError, "LIVE_ROUTER_DECISION_DIGEST_INVALID"
+        ):
+            verify_decision(actual, expected, {"balanced"})
 
     def test_router_attempted_authority_rejected(self):
         with self.assertRaises(RouterDecisionError):
