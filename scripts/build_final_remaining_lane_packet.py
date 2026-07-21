@@ -116,6 +116,7 @@ def build(
     qualification_release_only: bool,
     lane_policy_path: Path | None = None,
     historical_input_override: dict[str, Any] | None = None,
+    product_contract_bytes: bytes | None = None,
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     if (
@@ -159,6 +160,10 @@ def build(
     lane_id = source_binding["lane_id"]
     frozen = output_directory / "frozen"
     frozen.mkdir()
+    if product_contract_bytes is not None:
+        if not isinstance(product_contract_bytes, bytes):
+            raise RuntimeError("PRODUCT_CONTRACT_INVALID")
+        (frozen / "product-contract.json").write_bytes(product_contract_bytes)
     task_name = "task_lane_1.json"
     decision_name = "decision_lane_1.json"
     task_source = source_packet / source_binding["task_snapshot"]
@@ -473,11 +478,15 @@ def build_from_product_contract(
             qualification_release_only=contract["qualification_release_only"],
             lane_policy_path=policy_path,
             historical_input_override={
-                "product_contract": str(product_contract_path.resolve()),
+                "product_contract_snapshot": "frozen/product-contract.json",
+                "product_contract_source_path_at_build": str(
+                    product_contract_path.resolve()
+                ),
                 "product_contract_sha256": hashlib.sha256(raw).hexdigest(),
                 "source_campaign_reused": False,
                 "input_mode": "declarative_product_contract_v1",
             },
+            product_contract_bytes=raw,
         )
 
 def main(argv: list[str] | None = None) -> int:

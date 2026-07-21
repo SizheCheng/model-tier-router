@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import shutil
@@ -437,6 +438,15 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(
                 manifest["historical_input"]["input_mode"],
                 "declarative_product_contract_v1",
+            )
+            frozen_contract = (
+                packet
+                / manifest["historical_input"]["product_contract_snapshot"]
+            )
+            self.assertEqual(frozen_contract.read_bytes(), contract_path.read_bytes())
+            self.assertEqual(
+                manifest["historical_input"]["product_contract_sha256"],
+                hashlib.sha256(frozen_contract.read_bytes()).hexdigest(),
             )
             packet_policy = json.loads(
                 (packet / manifest["lane_policy"]["snapshot"]).read_text(encoding="utf-8")
