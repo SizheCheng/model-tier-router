@@ -31,6 +31,7 @@ class QualificationTests(unittest.TestCase):
             set(receipt["assets"]),
             {
                 "authority-receipt.schema.json",
+                "bounded-writer-receipt.schema.json",
                 "bounded-writer.py",
                 "host-materialization-lanes.json",
                 "proposed-files-result.schema.json",

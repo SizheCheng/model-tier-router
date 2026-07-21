@@ -14,6 +14,7 @@ from pathlib import Path
 
 ASSETS = {
     "authority-receipt.schema.json": "schemas/authority-receipt.schema.json",
+    "bounded-writer-receipt.schema.json": "schemas/bounded-writer-receipt.schema.json",
     "bounded-writer.py": "src/mtr_dogfood/bounded_writer.py",
     "host-materialization-lanes.json": "config/host-materialization-lanes.json",
     "proposed-files-result.schema.json": "schemas/proposed-files-result.schema.json",
@@ -93,13 +94,26 @@ def create_deterministic_zipapp(source: Path, target: Path) -> None:
             archive.writestr(info, path.read_bytes())
 
 
-def build(output_directory: Path) -> dict[str, object]:
+def build(
+    output_directory: Path,
+    *,
+    entrypoint: str = "qualification",
+) -> dict[str, object]:
     root = Path(__file__).resolve().parents[1]
     dirty_source = source_status(root, output_directory)
     source_head = git(root, "rev-parse", "HEAD")
     output_directory.mkdir(parents=True, exist_ok=True)
-    artifact = output_directory / "mtr-dogfood-qualification.pyz"
-    wrapper_source = root / "qualification" / "RUN_QUALIFICATION.ps1"
+    final_execution = entrypoint == "final-execution"
+    artifact = output_directory / (
+        "mtr-dogfood-final-execution.pyz"
+        if final_execution
+        else "mtr-dogfood-qualification.pyz"
+    )
+    wrapper_source = root / (
+        "final_execution/RUN_FINAL_TWO_PRODUCT_LANES.ps1"
+        if final_execution
+        else "qualification/RUN_QUALIFICATION.ps1"
+    )
     wrapper = output_directory / wrapper_source.name
 
     with tempfile.TemporaryDirectory(prefix="mtr-qualification-build-") as temporary:
@@ -110,12 +124,23 @@ def build(output_directory: Path) -> dict[str, object]:
             package,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+        (package / "_release_metadata.json").write_bytes(
+            canonical(
+                {
+                    "schema_version": "1.0.0",
+                    "source_head": source_head,
+                    "source_dirty": bool(dirty_source),
+                    "entrypoint": entrypoint,
+                }
+            )
+        )
         assets = package / "_qualification_assets"
         assets.mkdir()
         for name, relative in ASSETS.items():
             shutil.copyfile(root / relative, assets / name)
+        module = "final_execution" if final_execution else "qualification"
         (stage / "__main__.py").write_text(
-            "from mtr_dogfood.qualification import main\n"
+            f"from mtr_dogfood.{module} import main\n"
             "raise SystemExit(main())\n",
             encoding="utf-8",
             newline="\n",
@@ -144,6 +169,7 @@ def build(output_directory: Path) -> dict[str, object]:
 
     manifest = {
         "schema_version": "1.0.0",
+        "entrypoint": entrypoint,
         "artifact_status": (
             "candidate_uncommitted_source" if dirty_source else "committed_source"
         ),
@@ -173,8 +199,16 @@ def build(output_directory: Path) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-directory", required=True)
+    parser.add_argument(
+        "--entrypoint",
+        choices=("qualification", "final-execution"),
+        default="qualification",
+    )
     args = parser.parse_args(argv)
-    value = build(Path(args.output_directory).resolve())
+    value = build(
+        Path(args.output_directory).resolve(),
+        entrypoint=args.entrypoint,
+    )
     sys.stdout.buffer.write(canonical(value))
     return 0
 

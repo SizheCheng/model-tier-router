@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from importlib import resources
 from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 
@@ -1038,7 +1039,13 @@ def _run_attempt(
             raise RuntimeError("HOST_MATERIALIZATION_LANE_POLICY_MISMATCH")
         local_writer = metadata / Path(BOUNDED_WRITER_RELATIVE).name
         local_write_policy = metadata / BOUNDED_WRITE_POLICY_FILENAME
-        shutil.copyfile(Path(__file__).with_name("bounded_writer.py"), local_writer)
+        writer_source = Path(__file__).with_name("bounded_writer.py")
+        if writer_source.is_file():
+            shutil.copyfile(writer_source, local_writer)
+        else:
+            local_writer.write_bytes(
+                resources.files("mtr_dogfood").joinpath("bounded_writer.py").read_bytes()
+            )
         write_json(local_write_policy, {
             "schema_version": "2.0.0",
             "workspace": str(worktree.resolve(strict=True)),
@@ -1061,7 +1068,8 @@ def _run_attempt(
         receipt_dir.mkdir(parents=True, exist_ok=True)
         (receipt_dir / "task.json").write_bytes(source_task_bytes)
         authority = {
-            "schema_version": "1.0.0", "contract_id": RUNTIME_ROUTE_ID,
+            "schema_version": "1.0.0",
+            "contract_id": contract.get("route_id", RUNTIME_ROUTE_ID),
             "case_id": case["case_id"], "target_repository": str(repository),
             "baseline_head": baseline, "allowed_worktree": str(worktree),
             "allowed_task": case["task_text"],
@@ -1387,7 +1395,7 @@ def _run_attempt(
         accepted = failure_class == ""
         execution_receipt = {
             "schema_version": "1.0.0",
-            "route_id": RUNTIME_ROUTE_ID,
+            "route_id": contract.get("route_id", RUNTIME_ROUTE_ID),
             "case_id": case["case_id"],
             "attempt": attempt,
             "profile": profile,

@@ -50,6 +50,7 @@ LANE_ORDER = (
 )
 ASSETS = {
     "authority-receipt.schema.json": "schemas/authority-receipt.schema.json",
+    "bounded-writer-receipt.schema.json": "schemas/bounded-writer-receipt.schema.json",
     "bounded-writer.py": "src/mtr_dogfood/bounded_writer.py",
     "host-materialization-lanes.json": "config/host-materialization-lanes.json",
     "proposed-files-result.schema.json": "schemas/proposed-files-result.schema.json",
