@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import copy
+import base64
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +13,7 @@ from unittest.mock import patch
 
 from mtr_dogfood.config import ContractError, load_json
 from mtr_dogfood.external_runner import (
+    BOUNDED_WRITER_RELATIVE,
     ExternalRunner,
     _confidentiality_scan,
     _empty_closeout,
@@ -450,9 +453,21 @@ class TemporaryGitPolicyTests(unittest.TestCase):
             def launcher(**kwargs):
                 kwargs["on_process_started"]()
                 worktree = Path(kwargs["worktree"])
-                (worktree / "docs.txt").write_text(
-                    "validated\n", encoding="utf-8"
+                encoded = base64.b64encode(b"validated\n").decode("ascii")
+                writer = subprocess.run(
+                    [
+                        sys.executable, "-B", BOUNDED_WRITER_RELATIVE,
+                        "--slot", "fixture_docs",
+                        "--content-base64", encoded,
+                    ],
+                    cwd=worktree,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    capture_output=True,
+                    check=False,
                 )
+                self.assertEqual(writer.returncode, 0, writer.stderr)
                 output = Path(
                     kwargs["command"][
                         kwargs["command"].index("--output-last-message") + 1
@@ -475,12 +490,18 @@ class TemporaryGitPolicyTests(unittest.TestCase):
                 raw.mkdir(parents=True, exist_ok=True)
                 (raw / "codex-events.jsonl").write_text(
                     json.dumps({
-                        "type": "turn.completed",
-                        "usage": {
-                            "input_tokens": 4,
-                            "cached_input_tokens": 1,
-                            "output_tokens": 2,
-                            "reasoning_output_tokens": 1,
+                        "type": "item.completed",
+                        "item": {
+                            "id": "fixture-writer",
+                            "type": "command_execution",
+                            "command": (
+                                f'"powershell.exe" -Command "python -B '
+                                f'{BOUNDED_WRITER_RELATIVE} --slot fixture_docs '
+                                f'--content-base64 {encoded}"'
+                            ),
+                            "aggregated_output": writer.stdout,
+                            "exit_code": 0,
+                            "status": "completed",
                         },
                     }) + "\n",
                     encoding="utf-8",

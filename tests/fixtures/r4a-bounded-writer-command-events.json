@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "route": "MODEL_TIER_ROUTER_DOGFOOD_R4A_BOUNDED_WRITER_THREE_START_EXTERNAL_PACKET_R1",
+  "attempt_id": "r4-1-44777af063e141f38a838f34c9c78964",
+  "events": [
+    {
+      "event_index": 3,
+      "raw_line_byte_count": 1080,
+      "raw_line_sha256": "c59d65790c7e056637ae086eb91ee21eb218e035234348575e68373c058067e7",
+      "raw_line_base64": "eyJ0eXBlIjoiaXRlbS5zdGFydGVkIiwiaXRlbSI6eyJpZCI6Iml0ZW1fMSIsInR5cGUiOiJjb21tYW5kX2V4ZWN1dGlvbiIsImNvbW1hbmQiOiJcIkM6XFxcXFVzZXJzXFxcXHNpemhlXFxcXEFwcERhdGFcXFxcTG9jYWxcXFxcTWljcm9zb2Z0XFxcXFdpbmRvd3NBcHBzXFxcXHB3c2guZXhlXCIgLUNvbW1hbmQgJyRoZWxwZXIgPSAnXCInLm10ci1kb2dmb29kLXIzL2JvdW5kZWQtd3JpdGVyLnB5JzsgXCInJHBvbGljeSA9ICdcIicubXRyLWRvZ2Zvb2QtcjMvbGFuZS1wb2xpY3kuanNvbic7IGlmICgoR2V0LUZpbGVIYXNoIC1BbGdvcml0aG0gU0hBMjU2IC1MaXRlcmFsUGF0aCBcIickaGVscGVyKS5IYXNoLlRvTG93ZXIoKSAtbmUgJ1wiJ2I5NGE2YjM2OGM5ZmNkNjgxZmMzMWFhY2JmZDllZDMyZGY0Nzg3ZDAzNTdmN2FmYTlmZTJmZDYwN2Y5MmM3NmYnKSB7IHRocm93ICdoZWxwZXIgaGFzaCBtaXNtYXRjaCcgfTsgaWYgKChHZXQtRmlsZUhhc2ggLUFsZ29yaXRobSBTSEEyNTYgLUxpdGVyYWxQYXRoIFwiJyRwb2xpY3kpLkhhc2guVG9Mb3dlcigpIC1uZSAnXCInYjZmMjU1ZmE5Y2IwYmZjZmY5YWViZGVlZmMzYzZiYzAxMTNjYjAzNTYyMmFlYTFhYzZjMjJmNDg1ODMzY2U2ZCcpIHsgdGhyb3cgJ2xhbmUgcG9saWN5IGhhc2ggbWlzbWF0Y2gnIH07IHB5dGhvbiAtQiAubXRyLWRvZ2Zvb2QtcjMvYm91bmRlZC13cml0ZXIucHkgLS10YXJnZXQgJ0M6XFxcXFVzZXJzXFxcXHNpemhlXFxcXERvY3VtZW50c1xcXFxtb2RlbC10aWVyLXJvdXRlci1kb2dmb29kXFxcXHJ1bnNcXFxccmF3XFxcXHI0YS1ib3VuZGVkLXdyaXRlci10aHJlZS1zdGFydC1leHRlcm5hbC1wYWNrZXQtcjFcXFxccmVzdWx0c1xcXFxyNGEtcmVzdWx0LTIwMjYwNzIxVDAxMjYzMzg1MDc3ODRaLTI0MjE2XFxcXHdvcmtzcGFjZXNcXFxcd3JpdGFibGVfc21va2VcXFxcYXR0ZW1wdC0xXFxcXHNtb2tlXFxcXHJlc3VsdC50eHQnIC0tY29udGVudC1iYXNlNjQgJ1YwOVNTMU5RUVVORlgxZFNTVlJGWDA5TENnPT0nXCIiLCJhZ2dyZWdhdGVkX291dHB1dCI6IiIsImV4aXRfY29kZSI6bnVsbCwic3RhdHVzIjoiaW5fcHJvZ3Jlc3MifX0K",
+      "decoded_event": {
+        "type": "item.started",
+        "item": {
+          "id": "item_1",
+          "type": "command_execution",
+          "command": "\"C:\\\\Users\\\\sizhe\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command '$helper = '\"'.mtr-dogfood-r3/bounded-writer.py'; \"'$policy = '\"'.mtr-dogfood-r3/lane-policy.json'; if ((Get-FileHash -Algorithm SHA256 -LiteralPath \"'$helper).Hash.ToLower() -ne '\"'b94a6b368c9fcd681fc31aacbfd9ed32df4787d0357f7afa9fe2fd607f92c76f') { throw 'helper hash mismatch' }; if ((Get-FileHash -Algorithm SHA256 -LiteralPath \"'$policy).Hash.ToLower() -ne '\"'b6f255fa9cb0bfcff9aebdeefc3c6bc0113cb035622aea1ac6c22f485833ce6d') { throw 'lane policy hash mismatch' }; python -B .mtr-dogfood-r3/bounded-writer.py --target 'C:\\\\Users\\\\sizhe\\\\Documents\\\\model-tier-router-dogfood\\\\runs\\\\raw\\\\r4a-bounded-writer-three-start-external-packet-r1\\\\results\\\\r4a-result-20260721T0126338507784Z-24216\\\\workspaces\\\\writable_smoke\\\\attempt-1\\\\smoke\\\\result.txt' --content-base64 'V09SS1NQQUNFX1dSSVRFX09LCg=='\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      }
+    },
+    {
+      "event_index": 4,
+      "raw_line_byte_count": 2653,
+      "raw_line_sha256": "df789c2496fb4205a3c17c7b171f1f106ebd0965015d0c1f7dfe8e987ddd93d6",
+      "raw_line_base64": "eyJ0eXBlIjoiaXRlbS5jb21wbGV0ZWQiLCJpdGVtIjp7ImlkIjoiaXRlbV8xIiwidHlwZSI6ImNvbW1hbmRfZXhlY3V0aW9uIiwiY29tbWFuZCI6IlwiQzpcXFxcVXNlcnNcXFxcc2l6aGVcXFxcQXBwRGF0YVxcXFxMb2NhbFxcXFxNaWNyb3NvZnRcXFxcV2luZG93c0FwcHNcXFxccHdzaC5leGVcIiAtQ29tbWFuZCAnJGhlbHBlciA9ICdcIicubXRyLWRvZ2Zvb2QtcjMvYm91bmRlZC13cml0ZXIucHknOyBcIickcG9saWN5ID0gJ1wiJy5tdHItZG9nZm9vZC1yMy9sYW5lLXBvbGljeS5qc29uJzsgaWYgKChHZXQtRmlsZUhhc2ggLUFsZ29yaXRobSBTSEEyNTYgLUxpdGVyYWxQYXRoIFwiJyRoZWxwZXIpLkhhc2guVG9Mb3dlcigpIC1uZSAnXCInYjk0YTZiMzY4YzlmY2Q2ODFmYzMxYWFjYmZkOWVkMzJkZjQ3ODdkMDM1N2Y3YWZhOWZlMmZkNjA3ZjkyYzc2ZicpIHsgdGhyb3cgJ2hlbHBlciBoYXNoIG1pc21hdGNoJyB9OyBpZiAoKEdldC1GaWxlSGFzaCAtQWxnb3JpdGhtIFNIQTI1NiAtTGl0ZXJhbFBhdGggXCInJHBvbGljeSkuSGFzaC5Ub0xvd2VyKCkgLW5lICdcIidiNmYyNTVmYTljYjBiZmNmZjlhZWJkZWVmYzNjNmJjMDExM2NiMDM1NjIyYWVhMWFjNmMyMmY0ODU4MzNjZTZkJykgeyB0aHJvdyAnbGFuZSBwb2xpY3kgaGFzaCBtaXNtYXRjaCcgfTsgcHl0aG9uIC1CIC5tdHItZG9nZm9vZC1yMy9ib3VuZGVkLXdyaXRlci5weSAtLXRhcmdldCAnQzpcXFxcVXNlcnNcXFxcc2l6aGVcXFxcRG9jdW1lbnRzXFxcXG1vZGVsLXRpZXItcm91dGVyLWRvZ2Zvb2RcXFxccnVuc1xcXFxyYXdcXFxccjRhLWJvdW5kZWQtd3JpdGVyLXRocmVlLXN0YXJ0LWV4dGVybmFsLXBhY2tldC1yMVxcXFxyZXN1bHRzXFxcXHI0YS1yZXN1bHQtMjAyNjA3MjFUMDEyNjMzODUwNzc4NFotMjQyMTZcXFxcd29ya3NwYWNlc1xcXFx3cml0YWJsZV9zbW9rZVxcXFxhdHRlbXB0LTFcXFxcc21va2VcXFxccmVzdWx0LnR4dCcgLS1jb250ZW50LWJhc2U2NCAnVjA5U1MxTlFRVU5GWDFkU1NWUkZYMDlMQ2c9PSdcIiIsImFnZ3JlZ2F0ZWRfb3V0cHV0IjoiXHUwMDFiWzMxOzFtR2V0LUZpbGVIYXNoOiBcdTAwMWJbMG1cclxuXHUwMDFiWzMxOzFtXHUwMDFiWzM2OzFtTGluZSB8XHUwMDFiWzBtXHJcblx1MDAxYlszMTsxbVx1MDAxYlszNjsxbVx1MDAxYlszNjsxbSAgIDIgfCBcdTAwMWJbMG0g4oCmIGNoJyB9OyBpZiAoKFx1MDAxYlszNjsxbUdldC1GaWxlSGFzaCAtQWxnb3JpdGhtIFNIQTI1NiAtTGl0ZXJhbFBhdGggJHBvbGljeVx1MDAxYlswbSkuSGFzaCDigKZcdTAwMWJbMG1cclxuXHUwMDFiWzMxOzFtXHUwMDFiWzM2OzFtXHUwMDFiWzM2OzFtXHUwMDFiWzBtXHUwMDFiWzM2OzFtXHUwMDFiWzBtXHUwMDFiWzM2OzFtICAgICB8IFx1MDAxYlszMTsxbSAgICAgICAgICAgICAgIH5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+flx1MDAxYlswbVxyXG5cdTAwMWJbMzE7MW1cdTAwMWJbMzY7MW1cdTAwMWJbMzY7MW1cdTAwMWJbMG1cdTAwMWJbMzY7MW1cdTAwMWJbMG1cdTAwMWJbMzY7MW1cdTAwMWJbMzE7MW1cdTAwMWJbMzE7MW1cdTAwMWJbMzY7MW0gICAgIHwgXHUwMDFiWzMxOzFtQ291bGQgbm90IGZpbmQgZmlsZSAnQzpcXFVzZXJzXFxzaXpoZVxcRG9jdW1lbnRzXFxtb2RlbC10aWVyLXJvdXRlci1kb2dmb29kXFxydW5zXFxyYXdcXHI0YS1ib3VuZGVkLXdyaXRlci10aHJlZS1zdGFydC1leHRlcm5hbC1wYWNrZXQtcjFcXHJlc3VsdHNcXHI0YS1yZXN1bHQtMjAyNjA3MjFUMDEyNjMzODUwNzc4NFotMjQyMTZcXHdvcmtzcGFjZXNcXHdyaXRhYmxlX3Ntb2tlXFxhdHRlbXB0LTFcXC5tdHItZG9nZm9vZC1yM1xcbGFuZS1wb2xpY3kuanNvbicuXHUwMDFiWzBtXHJcblx1MDAxYlszMTsxbUludmFsaWRPcGVyYXRpb246IFx1MDAxYlswbVxyXG5cdTAwMWJbMzE7MW1cdTAwMWJbMzY7MW1MaW5lIHxcdTAwMWJbMG1cclxuXHUwMDFiWzMxOzFtXHUwMDFiWzM2OzFtXHUwMDFiWzM2OzFtICAgMiB8IFx1MDAxYlswbSDigKYgdGNoJyB9OyBpZiAoXHUwMDFiWzM2OzFtKEdldC1GaWxlSGFzaCAtQWxnb3JpdGhtIFNIQTI1NiAtTGl0ZXJhbFBhdGggJHBvbGljeSkuSGFzXHUwMDFiWzBtIOKAplx1MDAxYlswbVxyXG5cdTAwMWJbMzE7MW1cdTAwMWJbMzY7MW1cdTAwMWJbMzY7MW1cdTAwMWJbMG1cdTAwMWJbMzY7MW1cdTAwMWJbMG1cdTAwMWJbMzY7MW0gICAgIHwgXHUwMDFiWzMxOzFtICAgICAgICAgICAgICAgfn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+fn5+XHUwMDFiWzBtXHJcblx1MDAxYlszMTsxbVx1MDAxYlszNjsxbVx1MDAxYlszNjsxbVx1MDAxYlswbVx1MDAxYlszNjsxbVx1MDAxYlswbVx1MDAxYlszNjsxbVx1MDAxYlszMTsxbVx1MDAxYlszMTsxbVx1MDAxYlszNjsxbSAgICAgfCBcdTAwMWJbMzE7MW1Zb3UgY2Fubm90IGNhbGwgYSBtZXRob2Qgb24gYSBudWxsLXZhbHVlZCBleHByZXNzaW9uLlx1MDAxYlswbVxyXG57XCJlcnJvclwiOiBcInRhcmdldCBwYXRoIG11c3QgYmUgd29ya3NwYWNlLXJlbGF0aXZlXCIsIFwic2NoZW1hX3ZlcnNpb25cIjogXCIxLjAuMFwiLCBcInN0YXR1c1wiOiBcInJlamVjdGVkXCJ9XHJcbiIsImV4aXRfY29kZSI6MSwic3RhdHVzIjoiZmFpbGVkIn19Cg==",
+      "decoded_event": {
+        "type": "item.completed",
+        "item": {
+          "id": "item_1",
+          "type": "command_execution",
+          "command": "\"C:\\\\Users\\\\sizhe\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command '$helper = '\"'.mtr-dogfood-r3/bounded-writer.py'; \"'$policy = '\"'.mtr-dogfood-r3/lane-policy.json'; if ((Get-FileHash -Algorithm SHA256 -LiteralPath \"'$helper).Hash.ToLower() -ne '\"'b94a6b368c9fcd681fc31aacbfd9ed32df4787d0357f7afa9fe2fd607f92c76f') { throw 'helper hash mismatch' }; if ((Get-FileHash -Algorithm SHA256 -LiteralPath \"'$policy).Hash.ToLower() -ne '\"'b6f255fa9cb0bfcff9aebdeefc3c6bc0113cb035622aea1ac6c22f485833ce6d') { throw 'lane policy hash mismatch' }; python -B .mtr-dogfood-r3/bounded-writer.py --target 'C:\\\\Users\\\\sizhe\\\\Documents\\\\model-tier-router-dogfood\\\\runs\\\\raw\\\\r4a-bounded-writer-three-start-external-packet-r1\\\\results\\\\r4a-result-20260721T0126338507784Z-24216\\\\workspaces\\\\writable_smoke\\\\attempt-1\\\\smoke\\\\result.txt' --content-base64 'V09SS1NQQUNFX1dSSVRFX09LCg=='\"",
+          "aggregated_output": "\u001b[31;1mGet-FileHash: \u001b[0m\r\n\u001b[31;1m\u001b[36;1mLine |\u001b[0m\r\n\u001b[31;1m\u001b[36;1m\u001b[36;1m   2 | \u001b[0m … ch' }; if ((\u001b[36;1mGet-FileHash -Algorithm SHA256 -LiteralPath $policy\u001b[0m).Hash …\u001b[0m\r\n\u001b[31;1m\u001b[36;1m\u001b[36;1m\u001b[0m\u001b[36;1m\u001b[0m\u001b[36;1m     | \u001b[31;1m               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\u001b[0m\r\n\u001b[31;1m\u001b[36;1m\u001b[36;1m\u001b[0m\u001b[36;1m\u001b[0m\u001b[36;1m\u001b[31;1m\u001b[31;1m\u001b[36;1m     | \u001b[31;1mCould not find file 'C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r4a-bounded-writer-three-start-external-packet-r1\\results\\r4a-result-20260721T0126338507784Z-24216\\workspaces\\writable_smoke\\attempt-1\\.mtr-dogfood-r3\\lane-policy.json'.\u001b[0m\r\n\u001b[31;1mInvalidOperation: \u001b[0m\r\n\u001b[31;1m\u001b[36;1mLine |\u001b[0m\r\n\u001b[31;1m\u001b[36;1m\u001b[36;1m   2 | \u001b[0m … tch' }; if (\u001b[36;1m(Get-FileHash -Algorithm SHA256 -LiteralPath $policy).Has\u001b[0m …\u001b[0m\r\n\u001b[31;1m\u001b[36;1m\u001b[36;1m\u001b[0m\u001b[36;1m\u001b[0m\u001b[36;1m     | \u001b[31;1m               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\u001b[0m\r\n\u001b[31;1m\u001b[36;1m\u001b[36;1m\u001b[0m\u001b[36;1m\u001b[0m\u001b[36;1m\u001b[31;1m\u001b[31;1m\u001b[36;1m     | \u001b[31;1mYou cannot call a method on a null-valued expression.\u001b[0m\r\n{\"error\": \"target path must be workspace-relative\", \"schema_version\": \"1.0.0\", \"status\": \"rejected\"}\r\n",
+          "exit_code": 1,
+          "status": "failed"
+        }
+      }
+    }
+  ],
+  "final_result_sha256": "b12f6c8047c2fa2d70b38988d39169cfd1c373570ec291c628880d348d33f938",
+  "final_result": {
+    "schema_version": "1.0.0",
+    "status": "failed",
+    "summary": "Bounded writer invocation was rejected; smoke/result.txt was not created.",
+    "changed_paths": [],
+    "prohibited_action_attempted": false,
+    "notes": [
+      "The lane-policy file was absent, and the writer rejected the absolute target path as not workspace-relative. The single allowed invocation was consumed."
+    ]
+  },
+  "exact_model_failure_note": "The lane-policy file was absent, and the writer rejected the absolute target path as not workspace-relative. The single allowed invocation was consumed.",
+  "proven_failure_layer": "policy_path_missing_then_writer_rejected_absolute_target"
+}

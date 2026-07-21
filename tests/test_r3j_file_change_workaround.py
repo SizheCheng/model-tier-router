@@ -11,13 +11,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mtr_dogfood.bounded_writer import POLICY_FILENAME
+from mtr_dogfood.bounded_writer import (
+    POLICY_FILENAME,
+    validate_writer_receipts,
+)
 from mtr_dogfood.external_runner import (
     BOUNDED_WRITER_RELATIVE,
     _child_prompt,
     _run_attempt,
     _scan_child_commands,
     _substantive_lane_content,
+    _target_aliases,
 )
 from mtr_dogfood.config import load_json
 from mtr_dogfood.runtime_contract import ProcessAccounting
@@ -31,6 +35,8 @@ ALLOWED = [
     "docs/dogfood-automation.md",
     "tests/integrations/test_dogfood_automation.py",
 ]
+ALIASES = _target_aliases(ALLOWED)
+ALIAS_BY_PATH = {path: alias for alias, path in ALIASES.items()}
 
 
 def encoded(content: bytes) -> str:
@@ -38,27 +44,30 @@ def encoded(content: bytes) -> str:
 
 
 def install_writer(workspace: Path, allowed: list[str] | None = None) -> Path:
-    metadata = workspace / ".mtr-dogfood-r3"
+    metadata = workspace / ".mtr-dogfood-r4"
     metadata.mkdir(parents=True)
     writer = metadata / "bounded-writer.py"
     shutil.copyfile(WRITER, writer)
     (metadata / POLICY_FILENAME).write_text(json.dumps({
-        "schema_version": "1.0.0",
+        "schema_version": "2.0.0",
         "workspace": str(workspace.resolve()),
-        "allowed_paths": allowed or ALLOWED,
+        "target_aliases": (
+            _target_aliases(allowed) if allowed is not None else ALIASES
+        ),
         "max_content_bytes": 1_000_000,
     }, sort_keys=True), encoding="utf-8")
     return writer
 
 
-def run_writer(workspace: Path, target: str, content: bytes) -> subprocess.CompletedProcess[str]:
+def run_writer(workspace: Path, slot: str, content: bytes) -> subprocess.CompletedProcess[str]:
+    slot = ALIAS_BY_PATH.get(slot, slot)
     return subprocess.run(
         [
             sys.executable,
             "-B",
             BOUNDED_WRITER_RELATIVE,
-            "--target",
-            target,
+            "--slot",
+            slot,
             "--content-base64",
             encoded(content),
         ],
@@ -71,14 +80,19 @@ def run_writer(workspace: Path, target: str, content: bytes) -> subprocess.Compl
     )
 
 
-def command_event(command: str) -> dict[str, object]:
+def command_event(
+    command: str, *, output: str = "", exit_code: int = 0,
+    status: str = "completed",
+) -> dict[str, object]:
     return {
         "type": "item.completed",
         "item": {
             "id": "bounded-write",
             "type": "command_execution",
             "command": f'"powershell.exe" -Command "{command}"',
-            "status": "completed",
+            "aggregated_output": output,
+            "exit_code": exit_code,
+            "status": status,
         },
     }
 
@@ -207,8 +221,12 @@ class BoundedWriterTests(unittest.TestCase):
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual((self.workspace / target).read_bytes(), content)
                 receipt = json.loads(completed.stdout)
-                self.assertEqual(receipt["target"], target)
-                self.assertEqual(receipt["sha256"], hashlib.sha256(content).hexdigest())
+                self.assertEqual(receipt["target_alias"], ALIAS_BY_PATH[target])
+                self.assertEqual(receipt["relative_path"], target)
+                self.assertEqual(
+                    receipt["content_sha256"], hashlib.sha256(content).hexdigest()
+                )
+                self.assertEqual(receipt["post_write_file_sha256"], receipt["content_sha256"])
 
     def test_existing_regular_file_is_atomically_replaced(self):
         target = self.workspace / ALLOWED[0]
@@ -252,16 +270,16 @@ class BoundedWriterTests(unittest.TestCase):
                 self.skipTest("junction creation is unavailable")
         else:
             junction.symlink_to(outside, target_is_directory=True)
-        (self.workspace / ".mtr-dogfood-r3" / POLICY_FILENAME).write_text(
+        (self.workspace / ".mtr-dogfood-r4" / POLICY_FILENAME).write_text(
             json.dumps({
-                "schema_version": "1.0.0",
+                "schema_version": "2.0.0",
                 "workspace": str(self.workspace),
-                "allowed_paths": ["junction/escape.txt"],
+                "target_aliases": {"junction_escape": "junction/escape.txt"},
                 "max_content_bytes": 1_000_000,
             }),
             encoding="utf-8",
         )
-        completed = run_writer(self.workspace, "junction/escape.txt", b"blocked\n")
+        completed = run_writer(self.workspace, "junction_escape", b"blocked\n")
         self.assertEqual(completed.returncode, 2)
         self.assertIn("outside the workspace", completed.stderr)
         self.assertFalse((outside / "escape.txt").exists())
@@ -270,7 +288,7 @@ class BoundedWriterTests(unittest.TestCase):
         outside.rmdir()
 
     def test_policy_workspace_tampering_fails_closed(self):
-        policy = self.workspace / ".mtr-dogfood-r3" / POLICY_FILENAME
+        policy = self.workspace / ".mtr-dogfood-r4" / POLICY_FILENAME
         value = json.loads(policy.read_text(encoding="utf-8"))
         value["workspace"] = str(self.workspace.parent)
         policy.write_text(json.dumps(value), encoding="utf-8")
@@ -290,31 +308,51 @@ class BoundedWriteScannerAndPromptTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def scan(self, command: str):
+    def scan(self, command: str, *, output: str = "", exit_code: int = 0):
         self.events.write_text(
-            json.dumps(command_event(command)) + "\n", encoding="utf-8"
+            json.dumps(command_event(command, output=output, exit_code=exit_code)) + "\n",
+            encoding="utf-8",
         )
+        metadata = self.worktree / ".mtr-dogfood-r4"
+        receipts = []
+        if metadata.is_dir():
+            helper_hash = hashlib.sha256(
+                (metadata / "bounded-writer.py").read_bytes()
+            ).hexdigest()
+            policy_hash = hashlib.sha256(
+                (metadata / POLICY_FILENAME).read_bytes()
+            ).hexdigest()
+            receipts = validate_writer_receipts(
+                workspace=self.worktree,
+                helper_sha256=helper_hash,
+                policy_sha256=policy_hash,
+                target_aliases=ALIASES,
+            )["receipts"]
         return _scan_child_commands(
-            self.events, [], self.worktree, ALLOWED
+            self.events, [], self.worktree, ALIASES, receipts
         )
 
     def test_exact_helper_write_is_scanner_visible_and_authorized(self):
+        install_writer(self.worktree)
+        completed = run_writer(self.worktree, ALLOWED[0], b"bounded\n")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
         command = (
-            f"python -B {BOUNDED_WRITER_RELATIVE} --target {ALLOWED[0]} "
+            f"python -B {BOUNDED_WRITER_RELATIVE} --slot {ALIAS_BY_PATH[ALLOWED[0]]} "
             f"--content-base64 {encoded(b'bounded\n')}"
         )
-        scan = self.scan(command)
+        scan = self.scan(command, output=completed.stdout)
         self.assertFalse(scan["bounded_write_violation_detected"])
         self.assertEqual(scan["bounded_write_count"], 1)
         self.assertEqual(scan["bounded_write_targets"], [ALLOWED[0]])
         transport = scan["command_records"][0]["bounded_write_transport"]
         self.assertTrue(transport["recognized"])
         self.assertTrue(transport["authorized"])
+        self.assertTrue(transport["receipt_verified"])
 
     def test_malformed_helper_third_target_and_direct_shell_writes_fail_closed(self):
         commands = (
-            f"python -B {BOUNDED_WRITER_RELATIVE} --target third.txt --content-base64 QQ==",
-            f"python -B {BOUNDED_WRITER_RELATIVE} --target {ALLOWED[0]} --content-base64 %%%",
+            f"python -B {BOUNDED_WRITER_RELATIVE} --slot unknown_alias --content-base64 QQ==",
+            f"python -B {BOUNDED_WRITER_RELATIVE} --slot {ALIAS_BY_PATH[ALLOWED[0]]} --content-base64 %%%",
             "[System.IO.File]::WriteAllText('docs/direct.txt', 'blocked')",
             "python -c \"from pathlib import Path; Path('docs/direct.txt').write_text('x')\"",
             "python -c \"open('docs/direct.txt', 'w').write('x')\"",
@@ -342,8 +380,10 @@ class BoundedWriteScannerAndPromptTests(unittest.TestCase):
         prompt = _child_prompt(case, self.worktree)
         self.assertIn(BOUNDED_WRITER_RELATIVE, prompt)
         self.assertIn("canonical-base64-of-UTF8", prompt)
+        self.assertIn("--slot <target-alias>", prompt)
         self.assertIn("All other shell file writes", prompt)
-        for target in ALLOWED:
+        for alias, target in ALIASES.items():
+            self.assertIn(alias, prompt)
             self.assertIn(target, prompt)
 
 
@@ -438,14 +478,15 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
                 worktree = Path(kwargs["worktree"])
                 events = []
                 for target, content in contents.items():
+                    alias = ALIAS_BY_PATH[target]
                     command = (
-                        f"python -B {BOUNDED_WRITER_RELATIVE} --target {target} "
+                        f"python -B {BOUNDED_WRITER_RELATIVE} --slot {alias} "
                         f"--content-base64 {encoded(content)}"
                     )
                     completed = subprocess.run(
                         [
                             sys.executable, "-B", BOUNDED_WRITER_RELATIVE,
-                            "--target", target,
+                            "--slot", alias,
                             "--content-base64", encoded(content),
                         ],
                         cwd=worktree,
@@ -456,7 +497,7 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
                         check=False,
                     )
                     self.assertEqual(completed.returncode, 0, completed.stderr)
-                    events.append(command_event(command))
+                    events.append(command_event(command, output=completed.stdout))
                 output = Path(
                     kwargs["command"][
                         kwargs["command"].index("--output-last-message") + 1
@@ -529,7 +570,10 @@ class SubstantiveContentTests(unittest.TestCase):
         self.worktree = Path(self.temporary.name)
         (self.worktree / "docs").mkdir()
         (self.worktree / "tests/integrations").mkdir(parents=True)
-        self.case = {"case_id": "mtr-docs-private-executor-r1"}
+        self.case = {
+            "case_id": "mtr-docs-private-executor-r1",
+            "changed_path_patterns": ALLOWED,
+        }
         self.documentation = self.worktree / ALLOWED[0]
         self.integration = self.worktree / ALLOWED[1]
 

@@ -15,6 +15,11 @@ import sys
 from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 
+from .bounded_writer import (
+    POLICY_FILENAME as BOUNDED_WRITE_POLICY_FILENAME,
+    RECEIPT_DIRECTORY as BOUNDED_WRITE_RECEIPT_DIRECTORY,
+    validate_writer_receipts,
+)
 from .codex_runner import resolve_codex_executable, run_codex
 from .config import ContractError, canonical_json_bytes, harness_root, is_contained, load_json, same_path
 from .git_worktrees import (
@@ -73,12 +78,11 @@ CONFIDENTIAL_CONTENT_RE = re.compile(
     rb"|\bBearer\s+[A-Za-z0-9._-]{20,}",
     re.I,
 )
-BOUNDED_WRITER_RELATIVE = ".mtr-dogfood-r3/bounded-writer.py"
-BOUNDED_WRITE_POLICY_FILENAME = "bounded-write-policy.json"
+BOUNDED_WRITER_RELATIVE = ".mtr-dogfood-r4/bounded-writer.py"
 BOUNDED_WRITE_COMMAND_RE = re.compile(
     r"(?i)^python(?:\.exe)?\s+-B\s+"
-    r"\.mtr-dogfood-r3[\\/]bounded-writer\.py\s+"
-    r"--target\s+(?P<target>[^\s]+)\s+"
+    r"\.mtr-dogfood-r4[\\/]bounded-writer\.py\s+"
+    r"--slot\s+(?P<alias>[a-z][a-z0-9_]{0,63})\s+"
     r"--content-base64\s+(?P<content>[A-Za-z0-9+/]*={0,2})$"
 )
 BOUNDED_WRITER_MENTION_RE = re.compile(
@@ -142,6 +146,7 @@ def classify_external_attempt(
     schema_unchanged: bool, changed: list[str], changed_paths_allowed: bool,
     automated_acceptance: bool, forbidden_action: bool,
     confidentiality_ok: bool = True,
+    malformed_bounded_writer_invocation: bool = False,
 ) -> str:
     claim_failure = (
         classify_model_reported_blocker(claim) if output_valid else None
@@ -157,6 +162,8 @@ def classify_external_attempt(
         return "SCHEMA_REJECTION"
     if forbidden_action:
         return "UNAUTHORIZED_ACTION"
+    if malformed_bounded_writer_invocation:
+        return "MALFORMED_BOUNDED_WRITER_INVOCATION"
     if changed and not changed_paths_allowed:
         return "UNAUTHORIZED_ACTION"
     if not confidentiality_ok:
@@ -264,9 +271,32 @@ def _exact_bounded_write_paths(patterns: list[str]) -> list[str]:
     return paths
 
 
+TARGET_ALIAS_BY_PATH = {
+    "smoke/result.txt": "smoke_result",
+    "docs.txt": "fixture_docs",
+    "docs/dogfood-automation.md": "router_documentation",
+    "tests/integrations/test_dogfood_automation.py": "router_integration_test",
+    "tests/redaction/test_docx_package.py": "qwen_docx_hidden_elements_test",
+}
+
+
+def _target_aliases(paths: list[str]) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for path in _exact_bounded_write_paths(paths):
+        alias = TARGET_ALIAS_BY_PATH.get(path)
+        if alias is None or alias in aliases:
+            raise ContractError("bounded write path has no unique immutable alias")
+        aliases[alias] = path
+    return aliases
+
+
 def _inspect_bounded_write(
     payload: str,
-    allowed_write_paths: list[str] | None,
+    target_aliases: dict[str, str] | None,
+    verified_receipts: list[dict[str, Any]] | None = None,
+    command_output: str = "",
+    command_completed: bool = True,
+    child_exit_code: int | None = 0,
 ) -> dict[str, Any]:
     stripped = payload.strip()
     match = BOUNDED_WRITE_COMMAND_RE.fullmatch(stripped)
@@ -275,12 +305,13 @@ def _inspect_bounded_write(
         return {
             "recognized": mentioned,
             "authorized": False,
-            "target": None,
+            "target_alias": None,
+            "relative_path": None,
             "content_bytes": None,
             "content_sha256": None,
             "reason": "malformed_bounded_writer_command" if mentioned else None,
         }
-    target = match.group("target")
+    alias = match.group("alias")
     encoded = match.group("content")
     try:
         content = base64.b64decode(encoded.encode("ascii"), validate=True)
@@ -289,30 +320,61 @@ def _inspect_bounded_write(
         canonical = False
     else:
         canonical = base64.b64encode(content).decode("ascii") == encoded
-    allowed = allowed_write_paths or []
-    authorized = bool(
+    aliases = target_aliases or {}
+    path = aliases.get(alias)
+    syntax_valid = bool(
         canonical
         and len(content) <= 1_000_000
-        and target in allowed
-        and _windows_path_kind(target) == "relative"
-        and target.replace("\\", "/") == target
+        and path is not None
     )
     reason = None
-    if not authorized:
+    if not syntax_valid:
         if not canonical:
             reason = "invalid_content_base64"
         elif len(content) > 1_000_000:
             reason = "content_size_limit_exceeded"
-        elif target not in allowed:
-            reason = "target_not_contract_declared"
+        elif path is None:
+            reason = "unknown_target_alias"
         else:
-            reason = "target_not_canonical_relative"
+            reason = "malformed_bounded_writer_command"
+    digest = hashlib.sha256(content).hexdigest() if canonical else None
+    matching = [
+        receipt for receipt in (verified_receipts or [])
+        if receipt.get("target_alias") == alias
+        and receipt.get("relative_path") == path
+        and receipt.get("content_sha256") == digest
+        and receipt.get("content_byte_count") == len(content)
+    ]
+    output_matches = False
+    if len(matching) == 1:
+        try:
+            output_matches = json.loads(command_output.strip()) == matching[0]
+        except (json.JSONDecodeError, TypeError):
+            output_matches = False
+    authorized = bool(
+        syntax_valid
+        and command_completed
+        and child_exit_code == 0
+        and len(matching) == 1
+        and output_matches
+    )
+    if syntax_valid and not authorized:
+        if not command_completed or child_exit_code != 0:
+            reason = "writer_process_failed"
+        elif len(matching) == 0:
+            reason = "missing_or_unverified_writer_receipt"
+        elif len(matching) > 1:
+            reason = "duplicate_writer_receipt"
+        else:
+            reason = "writer_output_receipt_mismatch"
     return {
         "recognized": True,
         "authorized": authorized,
-        "target": target,
+        "target_alias": alias,
+        "relative_path": path,
         "content_bytes": len(content) if canonical else None,
-        "content_sha256": hashlib.sha256(content).hexdigest() if canonical else None,
+        "content_sha256": digest,
+        "receipt_verified": len(matching) == 1 and output_matches,
         "reason": reason,
     }
 
@@ -411,7 +473,8 @@ def _scan_child_commands(
     events_path: Path,
     forbidden_paths: list[str | Path],
     worktree: Path | None = None,
-    allowed_write_paths: list[str] | None = None,
+    target_aliases: dict[str, str] | None = None,
+    verified_writer_receipts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     result = {
         "forbidden_action_detected": False,
@@ -420,8 +483,11 @@ def _scan_child_commands(
         "remote_operation_attempted": False,
         "unparseable_command_detected": False,
         "bounded_write_violation_detected": False,
+        "bounded_write_security_violation_detected": False,
+        "malformed_bounded_writer_invocation_detected": False,
         "bounded_write_count": 0,
         "bounded_write_targets": [],
+        "bounded_write_aliases": [],
         "command_records": [],
     }
     if not events_path.exists():
@@ -561,18 +627,43 @@ def _scan_child_commands(
         if shell_name and shell is None:
             result["unparseable_command_detected"] = True
             result["external_path_access_detected"] = True
+        command_completed = event.get("type") == "item.completed"
+        child_exit_code = item.get("exit_code")
+        command_output = item.get("aggregated_output", "")
+        writer_inspection_input = path_input
+        if (
+            shell is None
+            and executable_name in {"python", "python.exe"}
+        ):
+            writer_inspection_input = f"python {operand_text}"
         write_transport = _inspect_bounded_write(
-            path_input, allowed_write_paths
+            writer_inspection_input,
+            target_aliases,
+            verified_writer_receipts,
+            command_output if isinstance(command_output, str) else "",
+            command_completed,
+            child_exit_code if isinstance(child_exit_code, int) else None,
         )
-        write_capable = bool(
-            write_transport["recognized"]
-            or SHELL_WRITE_OPERATION_RE.search(path_input)
+        direct_write = bool(
+            SHELL_WRITE_OPERATION_RE.search(path_input)
+            and not write_transport["recognized"]
         )
-        if write_capable and not write_transport["authorized"]:
+        write_capable = bool(write_transport["recognized"] or direct_write)
+        if command_completed and write_capable and not write_transport["authorized"]:
             result["bounded_write_violation_detected"] = True
-        if write_transport["authorized"]:
+            reason = write_transport.get("reason")
+            if direct_write or reason in {
+                "unknown_target_alias",
+                "duplicate_writer_receipt",
+                "writer_output_receipt_mismatch",
+            }:
+                result["bounded_write_security_violation_detected"] = True
+            else:
+                result["malformed_bounded_writer_invocation_detected"] = True
+        if command_completed and write_transport["authorized"]:
             result["bounded_write_count"] += 1
-            result["bounded_write_targets"].append(write_transport["target"])
+            result["bounded_write_aliases"].append(write_transport["target_alias"])
+            result["bounded_write_targets"].append(write_transport["relative_path"])
         result["command_records"].append({
             "event_index": event_index,
             "event_type": event.get("type"),
@@ -595,6 +686,9 @@ def _scan_child_commands(
             "write_capable": write_capable,
             "bounded_write_transport": write_transport,
         })
+    if len(verified_writer_receipts or []) != result["bounded_write_count"]:
+        result["bounded_write_violation_detected"] = True
+        result["bounded_write_security_violation_detected"] = True
     return result
 
 
@@ -643,6 +737,7 @@ def _child_prompt(case: dict[str, Any], worktree: Path) -> str:
     allowed_write_paths = _exact_bounded_write_paths(
         case["changed_path_patterns"]
     )
+    target_aliases = _target_aliases(allowed_write_paths)
     return f"""Implement one bounded task inside this assigned worktree:
 {worktree}
 
@@ -654,10 +749,12 @@ Frozen parent-run validator instructions: {json.dumps(validators)}
 
 The external Windows file_change adapter is unreliable in this runtime. For
 file-content writes, use only this runner-owned bounded helper, once per target:
-python -B {BOUNDED_WRITER_RELATIVE} --target <exact-path> --content-base64 <canonical-base64-of-UTF8>
-The exact permitted targets are: {json.dumps(allowed_write_paths)}
+python -B {BOUNDED_WRITER_RELATIVE} --slot <target-alias> --content-base64 <canonical-base64-of-UTF8>
+The immutable alias map is: {json.dumps(target_aliases, sort_keys=True)}
 Do not add quoting, redirection, pipelines, command chaining, or another writer
-to that command. The helper and its policy are hash-verified after execution.
+to that command. Do not supply a path. The parent verifies helper and policy
+hashes immediately before and after execution, then verifies the helper receipt,
+actual file bytes, and Git diff. A receipt alone does not grant authority.
 All other shell file writes, directory creation, file deletion, file moves, Git
 index/ref mutation, and Python or PowerShell inline writes are prohibited. The
 runner will enforce both the command record and the final changed-path diff.
@@ -808,6 +905,20 @@ def _task_still_useful(case: dict[str, Any], repository: Path) -> None:
 
 
 def _substantive_lane_content(case: dict[str, Any], worktree: Path) -> bool:
+    paths = case.get("changed_path_patterns", [])
+    if case.get("case_id") == "writable_smoke":
+        try:
+            return (worktree / "smoke/result.txt").read_bytes() == b"WORKSPACE_WRITE_OK\n"
+        except OSError:
+            return False
+    try:
+        required = [worktree / path for path in _exact_bounded_write_paths(paths)]
+        if not required or not all(
+            path.is_file() and len(path.read_bytes()) > 0 for path in required
+        ):
+            return False
+    except (OSError, ContractError):
+        return False
     if case["case_id"] != "mtr-docs-private-executor-r1":
         return True
     try:
@@ -868,7 +979,7 @@ def _run_attempt(
     filesystem_mutation = False
     validator_completed = False
     try:
-        metadata = worktree / ".mtr-dogfood-r3"
+        metadata = worktree / Path(BOUNDED_WRITER_RELATIVE).parent
         metadata.mkdir(parents=True, exist_ok=False)
         local_schema = metadata / "execution-result.schema.json"
         final_output = metadata / "final-result.json"
@@ -876,13 +987,14 @@ def _run_attempt(
         allowed_write_paths = _exact_bounded_write_paths(
             case["changed_path_patterns"]
         )
+        target_aliases = _target_aliases(allowed_write_paths)
         local_writer = metadata / Path(BOUNDED_WRITER_RELATIVE).name
         local_write_policy = metadata / BOUNDED_WRITE_POLICY_FILENAME
         shutil.copyfile(Path(__file__).with_name("bounded_writer.py"), local_writer)
         write_json(local_write_policy, {
-            "schema_version": "1.0.0",
+            "schema_version": "2.0.0",
             "workspace": str(worktree.resolve(strict=True)),
-            "allowed_paths": allowed_write_paths,
+            "target_aliases": target_aliases,
             "max_content_bytes": 1_000_000,
         })
         output_schema = load_json(local_schema)
@@ -941,6 +1053,17 @@ def _run_attempt(
             except FileNotFoundError:
                 result = _unstarted_execution("MISSING_COMMAND")
             else:
+                prestart_transport_verified = bool(
+                    local_writer.exists()
+                    and local_write_policy.exists()
+                    and hashlib.sha256(local_writer.read_bytes()).hexdigest()
+                    == writer_digest
+                    and hashlib.sha256(local_write_policy.read_bytes()).hexdigest()
+                    == write_policy_digest
+                    and not (metadata / BOUNDED_WRITE_RECEIPT_DIRECTORY).exists()
+                )
+                if not prestart_transport_verified:
+                    raise RuntimeError("BOUNDED_WRITE_TRANSPORT_PRESTART_MISMATCH")
                 budget.require_start_available()
                 starts_before = budget.os_child_process_started
                 result = launcher(
@@ -967,11 +1090,29 @@ def _run_attempt(
             and hashlib.sha256(local_write_policy.read_bytes()).hexdigest()
             == write_policy_digest
         )
+        writer_receipt_validation = (
+            validate_writer_receipts(
+                workspace=worktree,
+                helper_sha256=writer_digest,
+                policy_sha256=write_policy_digest,
+                target_aliases=target_aliases,
+            )
+            if bounded_write_transport_unchanged
+            else {
+                "valid": False,
+                "receipt_count": 0,
+                "receipts": [],
+                "errors": ["helper or policy post-run hash mismatch"],
+            }
+        )
         scan = _scan_child_commands(
             raw_dir / "codex-events.jsonl",
             forbidden_paths,
             worktree,
-            allowed_write_paths,
+            target_aliases,
+            writer_receipt_validation["receipts"]
+            if writer_receipt_validation["valid"]
+            else [],
         )
         shutil.rmtree(metadata, ignore_errors=True)
         shutil.rmtree(worktree / ".mtr-dogfood-r2", ignore_errors=True)
@@ -985,6 +1126,20 @@ def _run_attempt(
             worktree, case["repository"], paths
         )
         substantive_content_ok = _substantive_lane_content(case, worktree)
+        receipt_path_consistency = bool(
+            writer_receipt_validation["valid"]
+            and sorted(scan["bounded_write_targets"]) == sorted(paths)
+            and scan["bounded_write_count"] == len(paths)
+            and writer_receipt_validation["receipt_count"] == len(paths)
+        )
+        malformed_writer_invocation = bool(
+            scan["malformed_bounded_writer_invocation_detected"]
+            and not scan["bounded_write_security_violation_detected"]
+        )
+        bounded_writer_protocol_failure = bool(
+            scan["bounded_write_violation_detected"]
+            or not receipt_path_consistency
+        )
         forbidden_action = bool(
             claim.get("prohibited_action_attempted")
             or scan["forbidden_action_detected"]
@@ -992,7 +1147,7 @@ def _run_attempt(
             or scan["credential_access_detected"]
             or scan["remote_operation_attempted"]
             or scan["unparseable_command_detected"]
-            or scan["bounded_write_violation_detected"]
+            or scan["bounded_write_security_violation_detected"]
             or not bounded_write_transport_unchanged
             or (output_valid and sorted(claim.get("changed_paths", [])) != paths)
         )
@@ -1016,6 +1171,7 @@ def _run_attempt(
             and confidentiality_ok
             and substantive_content_ok
             and not forbidden_action
+            and not bounded_writer_protocol_failure
         )
         validator_side_effect_free = True
         if may_validate:
@@ -1050,6 +1206,18 @@ def _run_attempt(
         validation["confidentiality_scan_passed"] = confidentiality_ok
         validation["substantive_content_passed"] = substantive_content_ok
         validation["validator_side_effect_free"] = validator_side_effect_free
+        required_validator_count = len(case["validator_plan"]["commands"])
+        validation["required_validator_count"] = required_validator_count
+        validation["validation_ran"] = bool(validation_results)
+        validation["validator_stage_passed"] = bool(
+            (
+                required_validator_count == 0
+                or len(validation_results) == required_validator_count
+            )
+            and all(item.get("passed") for item in validation_results)
+        )
+        if required_validator_count and not validation_results:
+            validation["automated_acceptance"] = False
         failure_class = classify_external_attempt(
             result,
             claim,
@@ -1060,6 +1228,7 @@ def _run_attempt(
             automated_acceptance=validation["automated_acceptance"],
             forbidden_action=forbidden_action,
             confidentiality_ok=confidentiality_ok,
+            malformed_bounded_writer_invocation=malformed_writer_invocation,
         )
         accepted = failure_class == ""
         execution_receipt = {
@@ -1080,6 +1249,8 @@ def _run_attempt(
             "final_output_valid": output_valid,
             "schema_unchanged": schema_unchanged,
             "bounded_write_transport_unchanged": bounded_write_transport_unchanged,
+            "bounded_writer_receipt_validation": writer_receipt_validation,
+            "bounded_writer_receipts_match_diff": receipt_path_consistency,
             "filesystem_mutation_observed": filesystem_mutation,
             "validator_completed": validator_completed,
             "changed_paths": paths,
