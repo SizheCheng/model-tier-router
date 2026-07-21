@@ -285,10 +285,12 @@ class WorkspaceAndAuthorityTests(unittest.TestCase):
         }
         worktree = Path(r"C:\fixture\disposable")
         prompt = _child_prompt(case, worktree)
-        self.assertIn("Implement one bounded task", prompt)
-        self.assertIn("Read and write only inside the assigned worktree", prompt)
-        self.assertIn("docs/dogfood-automation.md", prompt)
-        self.assertIn("tests/integrations/test_dogfood_automation.py", prompt)
+        self.assertIn("Propose one bounded task", prompt)
+        self.assertIn("Read only inside the assigned worktree", prompt)
+        self.assertIn("router_documentation", prompt)
+        self.assertIn("router_integration_test", prompt)
+        self.assertNotIn("docs/dogfood-automation.md", prompt)
+        self.assertNotIn("tests/integrations/test_dogfood_automation.py", prompt)
         self.assertIn("Do not access", prompt)
         for action in ("commit", "push", "tag", "remote"):
             self.assertIn(action, prompt)

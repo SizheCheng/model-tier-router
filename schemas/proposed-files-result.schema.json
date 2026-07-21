@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lane_id",
+    "status",
+    "summary",
+    "notes",
+    "proposed_files",
+    "validation_expectations"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "enum": ["1.0.0"]},
+    "lane_id": {"type": "string"},
+    "status": {"type": "string", "enum": ["completed", "blocked", "failed"]},
+    "summary": {"type": "string"},
+    "notes": {"type": "array", "items": {"type": "string"}},
+    "proposed_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_alias",
+          "representation",
+          "encoding",
+          "content",
+          "utf8_byte_count",
+          "sha256",
+          "line_endings",
+          "media_type"
+        ],
+        "properties": {
+          "target_alias": {"type": "string"},
+          "representation": {"type": "string", "enum": ["utf8_text"]},
+          "encoding": {"type": "string", "enum": ["UTF-8"]},
+          "content": {"type": "string"},
+          "utf8_byte_count": {"type": "integer"},
+          "sha256": {"type": "string"},
+          "line_endings": {"type": "string", "enum": ["LF", "CRLF"]},
+          "media_type": {
+            "type": "string",
+            "enum": ["text/plain", "text/markdown", "text/x-python"]
+          }
+        }
+      }
+    },
+    "validation_expectations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "expectation", "required"],
+        "properties": {
+          "name": {"type": "string"},
+          "expectation": {"type": "string"},
+          "required": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

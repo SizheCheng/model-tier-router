@@ -17,7 +17,7 @@ EXPECTED_LITERALS = {
     10: "-c",
     11: "memories.generate_memories=false",
     12: "--sandbox",
-    13: "workspace-write",
+    13: "read-only",
     14: "--json",
     15: "--output-schema",
     17: "--output-last-message",

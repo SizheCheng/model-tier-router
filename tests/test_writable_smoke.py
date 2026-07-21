@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -35,7 +36,7 @@ def run_parser_fixture(command: list[str]) -> subprocess.CompletedProcess[bytes]
 
 def old_invalid_order(command: list[str]) -> list[str]:
     invalid = [command[0], *command[3:]]
-    insertion = invalid.index("workspace-write") + 1
+    insertion = invalid.index("read-only") + 1
     invalid[insertion:insertion] = ["--ask-for-approval", "never"]
     return invalid
 
@@ -78,7 +79,7 @@ class WritableSmokeTests(unittest.TestCase):
                     "-C", str(worktree.resolve()), "--ephemeral", "--model",
                     model, "-c", 'model_reasoning_effort="low"', "-c",
                     "memories.generate_memories=false", "--sandbox",
-                    "workspace-write", "--json", "--output-schema",
+                    "read-only", "--json", "--output-schema",
                     str(schema.resolve()), "--output-last-message",
                     str(output.resolve()), "-",
                 ],
@@ -162,9 +163,8 @@ class WritableSmokeTests(unittest.TestCase):
             self.assertEqual(kwargs["command"][0], "fake-codex.exe")
             kwargs["on_process_started"]()
             worktree = Path(kwargs["worktree"])
-            result_path = worktree / self.contract["fixture_smoke"]["result_path"]
-            result_path.parent.mkdir(parents=True)
-            result_path.write_bytes(b"WORKSPACE_WRITE_OK\n")
+            content = "WORKSPACE_WRITE_OK\n"
+            payload = content.encode("utf-8")
             output = Path(
                 kwargs["command"][
                     kwargs["command"].index("--output-last-message") + 1
@@ -173,11 +173,25 @@ class WritableSmokeTests(unittest.TestCase):
             output.write_text(
                 json.dumps({
                     "schema_version": "1.0.0",
+                    "lane_id": "writable_smoke",
                     "status": "completed",
-                    "summary": "synthetic fixture write completed",
-                    "changed_paths": ["smoke/result.txt"],
-                    "prohibited_action_attempted": False,
+                    "summary": "synthetic read-only proposal completed",
                     "notes": [],
+                    "proposed_files": [{
+                        "target_alias": "smoke_result",
+                        "representation": "utf8_text",
+                        "encoding": "UTF-8",
+                        "content": content,
+                        "utf8_byte_count": len(payload),
+                        "sha256": hashlib.sha256(payload).hexdigest(),
+                        "line_endings": "LF",
+                        "media_type": "text/plain",
+                    }],
+                    "validation_expectations": [{
+                        "name": "exact bytes",
+                        "expectation": "parent verifies exact smoke bytes",
+                        "required": True,
+                    }],
                 }),
                 encoding="utf-8",
             )

@@ -370,7 +370,7 @@ class BoundedWriteScannerAndPromptTests(unittest.TestCase):
                 if "push" in command:
                     self.assertTrue(scan["remote_operation_attempted"])
 
-    def test_prompt_grants_only_exact_helper_transport(self):
+    def test_prompt_grants_alias_only_read_only_proposal_transport(self):
         case = {
             "title": "bounded",
             "task_text": "create exact files",
@@ -378,13 +378,13 @@ class BoundedWriteScannerAndPromptTests(unittest.TestCase):
             "validator_plan": {"commands": []},
         }
         prompt = _child_prompt(case, self.worktree)
-        self.assertIn(BOUNDED_WRITER_RELATIVE, prompt)
-        self.assertIn("canonical-base64-of-UTF8", prompt)
-        self.assertIn("--slot <target-alias>", prompt)
-        self.assertIn("All other shell file writes", prompt)
+        self.assertIn("model phase is read-only", prompt.casefold())
+        self.assertIn("Do not invoke file_change", prompt)
+        self.assertIn("Do not put a filesystem path", prompt)
+        self.assertNotIn("--content-base64", prompt)
         for alias, target in ALIASES.items():
             self.assertIn(alias, prompt)
-            self.assertIn(target, prompt)
+            self.assertNotIn(target, prompt)
 
 
 class BoundedTransportIntegrationTests(unittest.TestCase):
@@ -398,11 +398,14 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
             baseline = initialize_repository(repository)
             (harness / "schemas").mkdir()
             for name in (
-                "execution-result.schema.json",
+                "proposed-files-result.schema.json",
+                "bounded-writer-receipt.schema.json",
                 "task.schema.json",
                 "authority-receipt.schema.json",
             ):
                 shutil.copyfile(ROOT / "schemas" / name, harness / "schemas" / name)
+            (harness / "config").mkdir()
+            shutil.copyfile(ROOT / "config" / "host-materialization-lanes.json", harness / "config" / "host-materialization-lanes.json")
             validator_plan = {
                 "commands": [{
                     "name": "bounded-output",
@@ -475,29 +478,21 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
 
             def launcher(**kwargs):
                 kwargs["on_process_started"]()
-                worktree = Path(kwargs["worktree"])
-                events = []
+                proposed = []
                 for target, content in contents.items():
                     alias = ALIAS_BY_PATH[target]
-                    command = (
-                        f"python -B {BOUNDED_WRITER_RELATIVE} --slot {alias} "
-                        f"--content-base64 {encoded(content)}"
-                    )
-                    completed = subprocess.run(
-                        [
-                            sys.executable, "-B", BOUNDED_WRITER_RELATIVE,
-                            "--slot", alias,
-                            "--content-base64", encoded(content),
-                        ],
-                        cwd=worktree,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        capture_output=True,
-                        check=False,
-                    )
-                    self.assertEqual(completed.returncode, 0, completed.stderr)
-                    events.append(command_event(command, output=completed.stdout))
+                    proposed.append({
+                        "target_alias": alias,
+                        "representation": "utf8_text",
+                        "encoding": "UTF-8",
+                        "content": content.decode("utf-8"),
+                        "utf8_byte_count": len(content),
+                        "sha256": hashlib.sha256(content).hexdigest(),
+                        "line_endings": "LF",
+                        "media_type": (
+                            "text/markdown" if target.endswith(".md") else "text/x-python"
+                        ),
+                    })
                 output = Path(
                     kwargs["command"][
                         kwargs["command"].index("--output-last-message") + 1
@@ -505,21 +500,21 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
                 )
                 output.write_text(json.dumps({
                     "schema_version": "1.0.0",
-                    "case_id": case["case_id"],
+                    "lane_id": case["case_id"],
                     "status": "completed",
-                    "summary": "bounded helper completed",
-                    "changed_paths": ALLOWED,
-                    "tests_run": [{
-                        "command": "parent validators only",
-                        "status": "not_run",
-                    }],
-                    "prohibited_action_attempted": False,
+                    "summary": "read-only proposal completed",
                     "notes": [],
+                    "proposed_files": proposed,
+                    "validation_expectations": [{
+                        "name": "parent validators",
+                        "expectation": "frozen validators pass",
+                        "required": True,
+                    }],
                 }), encoding="utf-8")
                 raw = Path(kwargs["raw_directory"])
                 raw.mkdir(parents=True, exist_ok=True)
                 (raw / "codex-events.jsonl").write_text(
-                    "\n".join(json.dumps(event) for event in events) + "\n",
+                    json.dumps({"type": "turn.completed"}) + "\n",
                     encoding="utf-8",
                 )
                 return {
@@ -559,10 +554,13 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
             self.assertTrue(outcome["accepted"])
             self.assertTrue(outcome["automatic_merge"])
             scan = outcome["child_command_scan"]
-            self.assertEqual(scan["bounded_write_count"], 2)
-            self.assertEqual(scan["bounded_write_targets"], ALLOWED)
+            self.assertEqual(scan["bounded_write_count"], 0)
+            self.assertEqual(scan["bounded_write_targets"], [])
             self.assertFalse(scan["bounded_write_violation_detected"])
 
+            self.assertEqual(
+                outcome["bounded_writer_receipt_validation"]["receipt_count"], 2
+            )
 
 class SubstantiveContentTests(unittest.TestCase):
     def setUp(self):

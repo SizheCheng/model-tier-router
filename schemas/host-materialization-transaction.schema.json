@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Host materialization transaction receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "transaction_id",
+    "expected_aliases",
+    "staged_aliases",
+    "committed_aliases",
+    "writer_receipt_ids",
+    "rollback_status",
+    "final_status",
+    "started_at",
+    "completed_at",
+    "error_classification"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "transaction_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "expected_aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "staged_aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "committed_aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "writer_receipt_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "rollback_status": {"enum": ["not_required", "completed", "failed"]},
+    "final_status": {"enum": ["committed", "rolled_back", "failed"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "error_classification": {"type": ["string", "null"]}
+  }
+}

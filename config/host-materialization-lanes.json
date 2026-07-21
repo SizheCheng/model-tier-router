@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0.0",
+  "model_output_success_guaranteed": false,
+  "safety_independent_of_model_output_capacity": true,
+  "lanes": [
+    {
+      "lane_id": "writable_smoke",
+      "maximum_file_count": 1,
+      "maximum_aggregate_content_bytes": 19,
+      "maximum_serialized_result_bytes": 4096,
+      "required_validation_expectations": 1,
+      "aliases": [
+        {
+          "target_alias": "smoke_result",
+          "relative_path": "smoke/result.txt",
+          "media_type": "text/plain",
+          "encoding": "UTF-8",
+          "allowed_line_endings": ["LF"],
+          "exact_content_bytes": 19,
+          "maximum_content_bytes": 19,
+          "maximum_serialized_bytes": 4096,
+          "nul_prohibited": true
+        }
+      ]
+    },
+    {
+      "lane_id": "mtr-docs-private-executor-r1",
+      "maximum_file_count": 2,
+      "maximum_aggregate_content_bytes": 24576,
+      "maximum_serialized_result_bytes": 155648,
+      "required_validation_expectations": 1,
+      "aliases": [
+        {
+          "target_alias": "router_documentation",
+          "relative_path": "docs/dogfood-automation.md",
+          "media_type": "text/markdown",
+          "encoding": "UTF-8",
+          "allowed_line_endings": ["LF", "CRLF"],
+          "exact_content_bytes": null,
+          "maximum_content_bytes": 8192,
+          "maximum_serialized_bytes": 51200,
+          "nul_prohibited": true
+        },
+        {
+          "target_alias": "router_integration_test",
+          "relative_path": "tests/integrations/test_dogfood_automation.py",
+          "media_type": "text/x-python",
+          "encoding": "UTF-8",
+          "allowed_line_endings": ["LF", "CRLF"],
+          "exact_content_bytes": null,
+          "maximum_content_bytes": 16384,
+          "maximum_serialized_bytes": 100352,
+          "nul_prohibited": true
+        }
+      ]
+    },
+    {
+      "lane_id": "qwen-docx-hidden-elements-r1",
+      "maximum_file_count": 1,
+      "maximum_aggregate_content_bytes": 32768,
+      "maximum_serialized_result_bytes": 204800,
+      "required_validation_expectations": 1,
+      "aliases": [
+        {
+          "target_alias": "qwen_docx_hidden_elements_test",
+          "relative_path": "tests/redaction/test_docx_package.py",
+          "media_type": "text/x-python",
+          "encoding": "UTF-8",
+          "allowed_line_endings": ["LF", "CRLF"],
+          "exact_content_bytes": null,
+          "maximum_content_bytes": 32768,
+          "maximum_serialized_bytes": 204800,
+          "nul_prohibited": true
+        }
+      ]
+    }
+  ]
+}

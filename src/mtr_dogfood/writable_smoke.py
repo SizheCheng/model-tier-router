@@ -11,12 +11,22 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
+from .bounded_writer import (
+    POLICY_FILENAME as BOUNDED_WRITE_POLICY_FILENAME,
+    validate_writer_receipts,
+)
 from .config import is_contained, load_json, same_path
 from .git_worktrees import changed_paths, diff_bytes
+from .host_materialization import (
+    HostMaterializationError,
+    alias_map as host_alias_map,
+    lane_contract as host_lane_contract,
+    load_lane_policy,
+    materialize_transaction,
+    validate_model_phase,
+)
 from .r2_contract import (
     PayloadValidationError,
-    classify_child_claim,
-    final_output_valid,
     validate_child_transport,
     validate_codex_output_schema,
 )
@@ -72,7 +82,7 @@ def build_external_codex_command(
         "-c",
         "memories.generate_memories=false",
         "--sandbox",
-        "workspace-write",
+        "read-only",
         "--json",
         "--output-schema",
         str(Path(output_schema).resolve()),
@@ -102,7 +112,7 @@ def validate_external_command_shape(command: list[str], worktree: str | Path) ->
         11: "-c",
         12: "memories.generate_memories=false",
         13: "--sandbox",
-        14: "workspace-write",
+        14: "read-only",
         15: "--json",
         16: "--output-schema",
         18: "--output-last-message",
@@ -114,7 +124,7 @@ def validate_external_command_shape(command: list[str], worktree: str | Path) ->
         raise PayloadValidationError("external command reasoning effort mismatch")
     if not command[8]:
         raise PayloadValidationError("external command model mismatch")
-    if command[14] != "workspace-write":
+    if command[14] != "read-only":
         raise PayloadValidationError("external command sandbox mismatch")
     if command[2] != "never":
         raise PayloadValidationError("external command approval mismatch")
@@ -127,13 +137,18 @@ def validate_external_command_shape(command: list[str], worktree: str | Path) ->
 def _fixture_prompt(fixture: Path, result_path: str) -> str:
     return f"""Work only inside this synthetic Git repository: {fixture}
 
-Create the exact file {result_path} containing the exact UTF-8 text
-WORKSPACE_WRITE_OK followed by one newline.
+Inspect the synthetic repository read-only. Propose the exact UTF-8 text
+WORKSPACE_WRITE_OK followed by one newline for target alias smoke_result.
 
-Do not modify any other tracked or untracked path. Do not read outside this
-repository. Do not use network tools, web search, credentials, apps, plugins,
-or subagents. Do not run Git mutation commands. Return only the required
-structured final result.
+Do not put {result_path} or any other filesystem path in the final result. Do
+not invoke file_change, apply_patch, a bounded writer, PowerShell or Python
+writes, shell redirection, or Git mutation. The model workspace is read-only.
+Return only the strict proposed-file result with alias, representation, UTF-8
+content, exact byte count, SHA-256, LF declaration, text/plain media type, and
+a required exact-byte validation expectation. The parent validates the whole
+result before transactionally materializing any file. Do not read outside this
+repository or use network tools, web search, credentials, apps, plugins, or
+subagents.
 """
 
 
@@ -226,16 +241,41 @@ def run_writable_smoke(
         if _git(fixture, "status", "--porcelain=v1"):
             raise RuntimeError("WRITABLE_SMOKE_BASELINE_DIRTY")
 
-        metadata = fixture / ".mtr-dogfood-r3"
+        metadata = fixture / ".mtr-dogfood-r4"
         metadata.mkdir()
-        local_schema = metadata / "writable-smoke-result.schema.json"
+        local_schema = metadata / "proposed-files-result.schema.json"
+        local_lane_policy = metadata / "host-materialization-lanes.json"
+        local_writer = metadata / "bounded-writer.py"
+        local_write_policy = metadata / BOUNDED_WRITE_POLICY_FILENAME
         final_output = metadata / "final-result.json"
-        source_schema = harness / contract["paths"]["writable_smoke_schema"]
+        source_schema = harness / "schemas" / "proposed-files-result.schema.json"
         shutil.copyfile(source_schema, local_schema)
+        shutil.copyfile(
+            harness / "config" / "host-materialization-lanes.json",
+            local_lane_policy,
+        )
+        shutil.copyfile(Path(__file__).with_name("bounded_writer.py"), local_writer)
+        lane_policy = load_lane_policy(local_lane_policy)
+        lane = host_lane_contract(lane_policy, "writable_smoke")
+        write_json(local_write_policy, {
+            "schema_version": "2.0.0",
+            "workspace": str(fixture.resolve(strict=True)),
+            "target_aliases": host_alias_map(lane),
+            "max_content_bytes": 19,
+        })
         output_schema = load_json(local_schema)
         budget.record_prelaunch()
         validate_codex_output_schema(output_schema)
         schema_digest = hashlib.sha256(local_schema.read_bytes()).hexdigest()
+        lane_policy_digest = hashlib.sha256(local_lane_policy.read_bytes()).hexdigest()
+        writer_digest = hashlib.sha256(local_writer.read_bytes()).hexdigest()
+        write_policy_digest = hashlib.sha256(local_write_policy.read_bytes()).hexdigest()
+        receipt_schema_path = harness / "schemas" / "bounded-writer-receipt.schema.json"
+        receipt_schema_digest = hashlib.sha256(receipt_schema_path.read_bytes()).hexdigest()
+        immutable_model_files = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in (local_schema, local_lane_policy, local_writer, local_write_policy)
+        }
         profile = smoke["model_profile"]
         mapping = contract["model_mapping"][profile]
         command = build_external_codex_command(
@@ -296,16 +336,94 @@ def run_writable_smoke(
                 },
             }
         )
-        output_valid = final_output_valid(final_output, output_schema)
-        claim: dict[str, Any] = load_json(final_output) if output_valid else {}
         if final_output.exists():
             shutil.copyfile(final_output, raw / "final-result.json")
         schema_unchanged = (
             local_schema.exists()
             and hashlib.sha256(local_schema.read_bytes()).hexdigest() == schema_digest
+            and local_lane_policy.exists()
+            and hashlib.sha256(local_lane_policy.read_bytes()).hexdigest()
+            == lane_policy_digest
         )
-        claim_failure = classify_child_claim(claim) if output_valid else None
-        infrastructure = result.get("infrastructure_failure_class") or claim_failure
+        transport_unchanged = bool(
+            schema_unchanged
+            and local_writer.is_file()
+            and local_write_policy.is_file()
+            and hashlib.sha256(local_writer.read_bytes()).hexdigest() == writer_digest
+            and hashlib.sha256(local_write_policy.read_bytes()).hexdigest()
+            == write_policy_digest
+            and all(
+                path.is_file()
+                and hashlib.sha256(path.read_bytes()).hexdigest()
+                == immutable_model_files[path.name]
+                for path in (local_schema, local_lane_policy, local_writer, local_write_policy)
+            )
+        )
+        model_paths = [
+            path for path in changed_paths(fixture)
+            if not path.replace("\\", "/").startswith(".mtr-dogfood-r4/")
+        ]
+        allowed_metadata = set(immutable_model_files) | {final_output.name}
+        unexpected_metadata = {
+            path.relative_to(metadata).as_posix()
+            for path in metadata.rglob("*")
+            if path.is_file() and path.relative_to(metadata).as_posix() not in allowed_metadata
+        }
+        from .external_runner import _scan_child_commands
+        scan = _scan_child_commands(
+            raw / "codex-events.jsonl",
+            protected,
+            fixture,
+            host_alias_map(lane),
+            [],
+            model_read_only=True,
+        )
+        output_valid = False
+        protocol_failure: str | None = None
+        transaction_receipt: dict[str, Any] | None = None
+        writer_receipts: dict[str, Any] = {
+            "valid": False, "receipt_count": 0, "receipts": [], "errors": []
+        }
+        try:
+            infrastructure = result.get("infrastructure_failure_class")
+            if infrastructure or int(result.get("host_policy_failure_count") or 0):
+                raise HostMaterializationError(
+                    str(infrastructure or "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS"),
+                    "model process infrastructure gate failed",
+                )
+            proposal = validate_model_phase(
+                process_result=result,
+                output_path=final_output,
+                lane=lane,
+                schema=output_schema,
+                command_scan=scan,
+                workspace_mutated=bool(model_paths or unexpected_metadata),
+                immutable_hashes_match=transport_unchanged,
+            )
+            output_valid = True
+            transaction_receipt = materialize_transaction(
+                workspace=fixture,
+                metadata=metadata,
+                proposal=proposal,
+                lane=lane,
+                helper_sha256=writer_digest,
+                policy_sha256=write_policy_digest,
+                receipt_schema_path=receipt_schema_path,
+                receipt_schema_sha256=receipt_schema_digest,
+                protected_roots=tuple(protected),
+            )
+            writer_receipts = validate_writer_receipts(
+                workspace=fixture,
+                helper_sha256=writer_digest,
+                policy_sha256=write_policy_digest,
+                target_aliases=host_alias_map(lane),
+            )
+        except HostMaterializationError as exc:
+            protocol_failure = exc.classification
+            transaction_receipt = exc.transaction_receipt
+        transaction_path = metadata / "host-materialization-transaction.json"
+        if transaction_path.is_file():
+            shutil.copyfile(transaction_path, raw / transaction_path.name)
         _remove_tree(metadata)
         _remove_tree(fixture / ".mtr-dogfood-r2")
 
@@ -326,19 +444,23 @@ def run_writable_smoke(
             and result.get("model_execution_completed")
             and result.get("exit_code") == 0
             and infrastructure is None
+            and protocol_failure is None
             and output_valid
-            and schema_unchanged
-            and claim.get("status") == "completed"
-            and claim.get("prohibited_action_attempted") is False
-            and claim.get("changed_paths") == [smoke["result_path"]]
+            and transport_unchanged
+            and transaction_receipt is not None
+            and transaction_receipt.get("final_status") == "committed"
+            and writer_receipts["valid"]
+            and writer_receipts["receipt_count"] == 1
             and paths == [smoke["result_path"]]
             and status_lines == [f"?? {smoke['result_path']}"]
             and exact_bytes
         )
         if infrastructure:
             failure_class = str(infrastructure)
-        elif not output_valid or not schema_unchanged:
-            failure_class = "SCHEMA_REJECTION"
+        elif protocol_failure:
+            failure_class = protocol_failure
+        elif not output_valid or not transport_unchanged:
+            failure_class = "MODEL_OUTPUT_SCHEMA_INVALID"
         elif not result.get("model_execution_observed"):
             failure_class = "ENVIRONMENT_FAILURE"
         elif not accepted:
@@ -352,6 +474,10 @@ def run_writable_smoke(
                 "failure_class": failure_class,
                 "baseline_head": baseline,
                 "final_output_valid": output_valid,
+                "model_workspace_read_only": True,
+                "model_workspace_mutation_detected": bool(model_paths or unexpected_metadata),
+                "host_materialization_transaction": transaction_receipt,
+                "writer_receipt_validation": writer_receipts,
                 "filesystem_mutation_observed": mutation,
                 "validator_completed": True,
                 "changed_paths": paths,

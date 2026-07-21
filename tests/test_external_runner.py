@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import copy
-import base64
+import hashlib
 import json
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +12,6 @@ from unittest.mock import patch
 
 from mtr_dogfood.config import ContractError, load_json
 from mtr_dogfood.external_runner import (
-    BOUNDED_WRITER_RELATIVE,
     ExternalRunner,
     _confidentiality_scan,
     _empty_closeout,
@@ -385,11 +383,14 @@ class TemporaryGitPolicyTests(unittest.TestCase):
             baseline = initialize_repository(repository)
             (harness / "schemas").mkdir()
             for name in (
-                "execution-result.schema.json",
+                "proposed-files-result.schema.json",
+                "bounded-writer-receipt.schema.json",
                 "task.schema.json",
                 "authority-receipt.schema.json",
             ):
                 shutil.copyfile(ROOT / "schemas" / name, harness / "schemas" / name)
+            (harness / "config").mkdir()
+            shutil.copyfile(ROOT / "config" / "host-materialization-lanes.json", harness / "config" / "host-materialization-lanes.json")
 
             validator_plan = {
                 "commands": [{
@@ -399,19 +400,22 @@ class TemporaryGitPolicyTests(unittest.TestCase):
                         "python",
                         "-B",
                         "-c",
-                        "from pathlib import Path; assert Path('docs.txt').read_text(encoding='utf-8') == 'validated\\n'",
+                        "from pathlib import Path; assert 'execution_authorized' in Path('docs/dogfood-automation.md').read_text(encoding='utf-8')",
                     ],
                     "timeout_seconds": 30,
                 }]
             }
             case = {
                 "schema_version": "1.0.0",
-                "case_id": "fake-mtr-r3",
+                "case_id": "mtr-docs-private-executor-r1",
                 "repository": "model-tier-router",
                 "baseline_head": baseline,
                 "title": "fake isolated change",
-                "task_text": "Create docs.txt with deterministic synthetic text.",
-                "changed_path_patterns": ["docs.txt"],
+                "task_text": "Propose the two deterministic synthetic lane files.",
+                "changed_path_patterns": [
+                    "docs/dogfood-automation.md",
+                    "tests/integrations/test_dogfood_automation.py",
+                ],
                 "risk": "LOW_RISK",
                 "change_class": "documentation",
                 "validator_plan": validator_plan,
@@ -452,58 +456,56 @@ class TemporaryGitPolicyTests(unittest.TestCase):
 
             def launcher(**kwargs):
                 kwargs["on_process_started"]()
-                worktree = Path(kwargs["worktree"])
-                encoded = base64.b64encode(b"validated\n").decode("ascii")
-                writer = subprocess.run(
-                    [
-                        sys.executable, "-B", BOUNDED_WRITER_RELATIVE,
-                        "--slot", "fixture_docs",
-                        "--content-base64", encoded,
-                    ],
-                    cwd=worktree,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    capture_output=True,
-                    check=False,
-                )
-                self.assertEqual(writer.returncode, 0, writer.stderr)
                 output = Path(
                     kwargs["command"][
                         kwargs["command"].index("--output-last-message") + 1
                     ]
                 )
+                contents = {
+                    "router_documentation": (
+                        "# Advisory\n\nrecommended execution_authorized false "
+                        "authorized_write_scope empty under separate current authority.\n"
+                    ),
+                    "router_integration_test": (
+                        "import unittest\n# assess recommended execution_authorized "
+                        "authorized_write_scope\nclass AdvisoryTest(unittest.TestCase):\n"
+                        "    def test_recommended(self): self.assertTrue(True)\n"
+                    ),
+                }
+                media = {
+                    "router_documentation": "text/markdown",
+                    "router_integration_test": "text/x-python",
+                }
+                proposed = []
+                for alias, content in contents.items():
+                    payload = content.encode("utf-8")
+                    proposed.append({
+                        "target_alias": alias,
+                        "representation": "utf8_text",
+                        "encoding": "UTF-8",
+                        "content": content,
+                        "utf8_byte_count": len(payload),
+                        "sha256": hashlib.sha256(payload).hexdigest(),
+                        "line_endings": "LF",
+                        "media_type": media[alias],
+                    })
                 output.write_text(json.dumps({
                     "schema_version": "1.0.0",
-                    "case_id": case["case_id"],
+                    "lane_id": case["case_id"],
                     "status": "completed",
                     "summary": "fake child completed",
-                    "changed_paths": ["docs.txt"],
-                    "tests_run": [{
-                        "command": "parent validators only",
-                        "status": "not_run",
-                    }],
-                    "prohibited_action_attempted": False,
                     "notes": [],
+                    "proposed_files": proposed,
+                    "validation_expectations": [{
+                        "name": "parent validators",
+                        "expectation": "frozen validators pass",
+                        "required": True,
+                    }],
                 }), encoding="utf-8")
                 raw = Path(kwargs["raw_directory"])
                 raw.mkdir(parents=True, exist_ok=True)
                 (raw / "codex-events.jsonl").write_text(
-                    json.dumps({
-                        "type": "item.completed",
-                        "item": {
-                            "id": "fixture-writer",
-                            "type": "command_execution",
-                            "command": (
-                                f'"powershell.exe" -Command "python -B '
-                                f'{BOUNDED_WRITER_RELATIVE} --slot fixture_docs '
-                                f'--content-base64 {encoded}"'
-                            ),
-                            "aggregated_output": writer.stdout,
-                            "exit_code": 0,
-                            "status": "completed",
-                        },
-                    }) + "\n",
+                    json.dumps({"type": "turn.completed"}) + "\n",
                     encoding="utf-8",
                 )
                 return {

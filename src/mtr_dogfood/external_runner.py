@@ -21,6 +21,14 @@ from .bounded_writer import (
     validate_writer_receipts,
 )
 from .codex_runner import resolve_codex_executable, run_codex
+from .host_materialization import (
+    HostMaterializationError,
+    alias_map as host_alias_map,
+    lane_contract as host_lane_contract,
+    load_lane_policy,
+    materialize_transaction,
+    validate_model_phase,
+)
 from .config import ContractError, canonical_json_bytes, harness_root, is_contained, load_json, same_path
 from .git_worktrees import (
     GitContractError, changed_paths, commit_exact_paths, create_worktree,
@@ -32,7 +40,7 @@ from .process_ancestry import (
     verify_standalone_powershell, windows_process_provider,
 )
 from .r2_contract import (
-    PayloadValidationError, classify_model_reported_blocker, final_output_valid,
+    PayloadValidationError, classify_model_reported_blocker,
     validate_child_transport, validate_launch_payloads,
 )
 from .receipts import write_json
@@ -93,6 +101,7 @@ SHELL_WRITE_OPERATION_RE = re.compile(
     r"\b(?:set-content|add-content|out-file|writealltext|writeallbytes|"
     r"write_text|write_bytes|new-item|copy-item|move-item|remove-item|"
     r"mkdir|makedirs|touch|unlink|rmtree|copyfile|rename|replace|openwrite|"
+    r"apply_patch|file_change|"
     r"tee|truncate|git\s+(?:add|apply|checkout|switch|branch|restore|mv|rm|init))\b"
     r"|(?:^|[^\w])open\s*\(|\.write\s*\(|(?<![<>=])>{1,2}(?![=])"
 )
@@ -475,6 +484,7 @@ def _scan_child_commands(
     worktree: Path | None = None,
     target_aliases: dict[str, str] | None = None,
     verified_writer_receipts: list[dict[str, Any]] | None = None,
+    model_read_only: bool = False,
 ) -> dict[str, Any]:
     result = {
         "forbidden_action_detected": False,
@@ -488,6 +498,8 @@ def _scan_child_commands(
         "bounded_write_count": 0,
         "bounded_write_targets": [],
         "bounded_write_aliases": [],
+        "model_direct_write_attempt_detected": False,
+        "model_file_change_attempt_detected": False,
         "command_records": [],
     }
     if not events_path.exists():
@@ -503,6 +515,11 @@ def _scan_child_commands(
         item = event.get("item")
         if not isinstance(item, dict):
             continue
+        item_type = str(item.get("type", "")).casefold()
+        if item_type in {"file_change", "apply_patch"}:
+            result["model_file_change_attempt_detected"] = True
+            result["bounded_write_violation_detected"] = True
+            result["bounded_write_security_violation_detected"] = True
         display_command = item.get("command")
         structured_executable = item.get("executable")
         structured_argv = item.get("argv")
@@ -645,11 +662,15 @@ def _scan_child_commands(
             child_exit_code if isinstance(child_exit_code, int) else None,
         )
         direct_write = bool(
-            SHELL_WRITE_OPERATION_RE.search(path_input)
+            SHELL_WRITE_OPERATION_RE.search(inspection_text)
             and not write_transport["recognized"]
         )
         write_capable = bool(write_transport["recognized"] or direct_write)
-        if command_completed and write_capable and not write_transport["authorized"]:
+        if model_read_only and command_completed and write_capable:
+            result["model_direct_write_attempt_detected"] = True
+            result["bounded_write_violation_detected"] = True
+            result["bounded_write_security_violation_detected"] = True
+        elif command_completed and write_capable and not write_transport["authorized"]:
             result["bounded_write_violation_detected"] = True
             reason = write_transport.get("reason")
             if direct_write or reason in {
@@ -660,7 +681,7 @@ def _scan_child_commands(
                 result["bounded_write_security_violation_detected"] = True
             else:
                 result["malformed_bounded_writer_invocation_detected"] = True
-        if command_completed and write_transport["authorized"]:
+        if not model_read_only and command_completed and write_transport["authorized"]:
             result["bounded_write_count"] += 1
             result["bounded_write_aliases"].append(write_transport["target_alias"])
             result["bounded_write_targets"].append(write_transport["relative_path"])
@@ -686,7 +707,7 @@ def _scan_child_commands(
             "write_capable": write_capable,
             "bounded_write_transport": write_transport,
         })
-    if len(verified_writer_receipts or []) != result["bounded_write_count"]:
+    if not model_read_only and len(verified_writer_receipts or []) != result["bounded_write_count"]:
         result["bounded_write_violation_detected"] = True
         result["bounded_write_security_violation_detected"] = True
     return result
@@ -716,6 +737,12 @@ def _sanitized_claim_summary(claim: dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict)
         ],
         "notes_count": len(claim.get("notes", [])),
+        "proposed_aliases": [
+            item.get("target_alias")
+            for item in claim.get("proposed_files", [])
+            if isinstance(item, dict)
+        ],
+        "validation_expectation_count": len(claim.get("validation_expectations", [])),
     }
 
 
@@ -738,34 +765,33 @@ def _child_prompt(case: dict[str, Any], worktree: Path) -> str:
         case["changed_path_patterns"]
     )
     target_aliases = _target_aliases(allowed_write_paths)
-    return f"""Implement one bounded task inside this assigned worktree:
+    return f"""Propose one bounded task result from this read-only assigned worktree:
 {worktree}
 
 Task: {case['title']}
 {case['task_text']}
 
-Allowed changed paths: {json.dumps(case['changed_path_patterns'])}
+Parent-controlled target aliases: {json.dumps(sorted(target_aliases))}
 Frozen parent-run validator instructions: {json.dumps(validators)}
 
-The external Windows file_change adapter is unreliable in this runtime. For
-file-content writes, use only this runner-owned bounded helper, once per target:
-python -B {BOUNDED_WRITER_RELATIVE} --slot <target-alias> --content-base64 <canonical-base64-of-UTF8>
-The immutable alias map is: {json.dumps(target_aliases, sort_keys=True)}
-Do not add quoting, redirection, pipelines, command chaining, or another writer
-to that command. Do not supply a path. The parent verifies helper and policy
-hashes immediately before and after execution, then verifies the helper receipt,
-actual file bytes, and Git diff. A receipt alone does not grant authority.
-All other shell file writes, directory creation, file deletion, file moves, Git
-index/ref mutation, and Python or PowerShell inline writes are prohibited. The
-runner will enforce both the command record and the final changed-path diff.
+The model phase is read-only. Do not invoke file_change, apply_patch, the bounded
+writer, PowerShell or Python writes, shell redirection, directory creation,
+deletion, moves, or any Git mutation. Return proposed UTF-8 file contents only
+through the structured final result. Refer to targets only by the exact aliases
+above. Do not put a filesystem path or changed_paths field in the final result.
+For every proposed file, declare its exact UTF-8 byte count, SHA-256, media type,
+encoding, representation, and line endings. Declare the parent validations that
+must pass. Incomplete, malformed, truncated, missing, extra, or oversized output
+will fail closed and will materialize no file. The parent alone validates all
+payloads and then invokes the trusted writer transactionally.
 
-Read and write only inside the assigned worktree. Use only repository files and
+Read only inside the assigned worktree. Use only repository files and
 synthetic fixtures already present there. Do not access credentials, user
 memory, another repository, or any path outside the worktree. Do not use
 network tools, web search, browser tools, apps, plugins, or subagents. Do not
 run git commit, merge, rebase, reset, clean, push, remote, tag, or stash. Do not
 deploy, publish, release, deliver, or modify persistent Git configuration.
-Make the smallest useful change and return only the structured final result.
+Propose the smallest useful change and return only the structured final result.
 """
 
 
@@ -981,13 +1007,19 @@ def _run_attempt(
     try:
         metadata = worktree / Path(BOUNDED_WRITER_RELATIVE).parent
         metadata.mkdir(parents=True, exist_ok=False)
-        local_schema = metadata / "execution-result.schema.json"
+        local_schema = metadata / "proposed-files-result.schema.json"
+        local_lane_policy = metadata / "host-materialization-lanes.json"
         final_output = metadata / "final-result.json"
-        shutil.copyfile(root / "schemas" / "execution-result.schema.json", local_schema)
+        shutil.copyfile(root / "schemas" / "proposed-files-result.schema.json", local_schema)
+        shutil.copyfile(root / "config" / "host-materialization-lanes.json", local_lane_policy)
+        lane_policy = load_lane_policy(local_lane_policy)
+        lane = host_lane_contract(lane_policy, case["case_id"])
         allowed_write_paths = _exact_bounded_write_paths(
             case["changed_path_patterns"]
         )
         target_aliases = _target_aliases(allowed_write_paths)
+        if target_aliases != host_alias_map(lane):
+            raise RuntimeError("HOST_MATERIALIZATION_LANE_POLICY_MISMATCH")
         local_writer = metadata / Path(BOUNDED_WRITER_RELATIVE).name
         local_write_policy = metadata / BOUNDED_WRITE_POLICY_FILENAME
         shutil.copyfile(Path(__file__).with_name("bounded_writer.py"), local_writer)
@@ -995,14 +1027,21 @@ def _run_attempt(
             "schema_version": "2.0.0",
             "workspace": str(worktree.resolve(strict=True)),
             "target_aliases": target_aliases,
-            "max_content_bytes": 1_000_000,
+            "max_content_bytes": max(item["maximum_content_bytes"] for item in lane["aliases"]),
         })
         output_schema = load_json(local_schema)
         schema_digest = hashlib.sha256(local_schema.read_bytes()).hexdigest()
+        lane_policy_digest = hashlib.sha256(local_lane_policy.read_bytes()).hexdigest()
         writer_digest = hashlib.sha256(local_writer.read_bytes()).hexdigest()
         write_policy_digest = hashlib.sha256(
             local_write_policy.read_bytes()
         ).hexdigest()
+        receipt_schema_path = root / "schemas" / "bounded-writer-receipt.schema.json"
+        receipt_schema_digest = hashlib.sha256(receipt_schema_path.read_bytes()).hexdigest()
+        immutable_model_files = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in (local_schema, local_lane_policy, local_writer, local_write_policy)
+        }
         receipt_dir.mkdir(parents=True, exist_ok=True)
         (receipt_dir / "task.json").write_bytes(source_task_bytes)
         authority = {
@@ -1017,7 +1056,7 @@ def _run_attempt(
             "execution_authority_source": "explicit external R3 runtime contract",
             "router_execution_authorized": False, "router_authorized_write_scope": [],
             "worktree_local_schema_path": str(local_schema),
-            "child_writable_roots": [str(worktree)],
+            "child_writable_roots": [],
         }
         write_json(receipt_dir / "authority-receipt.json", authority)
         write_json(receipt_dir / "decision.json", decision)
@@ -1075,13 +1114,14 @@ def _run_attempt(
                 started_delta = budget.os_child_process_started - starts_before
                 if started_delta != int(bool(result.get("child_process_started"))):
                     raise RuntimeError("ENVIRONMENT_FAILURE")
-        output_valid = final_output_valid(final_output, output_schema)
-        claim: dict[str, Any] = load_json(final_output) if output_valid else {}
         if final_output.exists():
             shutil.copyfile(final_output, raw_dir / "final-result.json")
         schema_unchanged = (
             local_schema.exists()
             and hashlib.sha256(local_schema.read_bytes()).hexdigest() == schema_digest
+            and local_lane_policy.exists()
+            and hashlib.sha256(local_lane_policy.read_bytes()).hexdigest()
+            == lane_policy_digest
         )
         bounded_write_transport_unchanged = bool(
             local_writer.exists()
@@ -1090,30 +1130,116 @@ def _run_attempt(
             and hashlib.sha256(local_write_policy.read_bytes()).hexdigest()
             == write_policy_digest
         )
-        writer_receipt_validation = (
-            validate_writer_receipts(
-                workspace=worktree,
-                helper_sha256=writer_digest,
-                policy_sha256=write_policy_digest,
-                target_aliases=target_aliases,
+        immutable_hashes_match = bool(
+            schema_unchanged
+            and bounded_write_transport_unchanged
+            and all(
+                path.is_file()
+                and hashlib.sha256(path.read_bytes()).hexdigest()
+                == immutable_model_files[path.name]
+                for path in (local_schema, local_lane_policy, local_writer, local_write_policy)
             )
-            if bounded_write_transport_unchanged
-            else {
-                "valid": False,
-                "receipt_count": 0,
-                "receipts": [],
-                "errors": ["helper or policy post-run hash mismatch"],
-            }
         )
+        model_paths = [
+            path for path in changed_paths(worktree)
+            if not path.replace("\\", "/").startswith(".mtr-dogfood-r4/")
+        ]
+        allowed_metadata = set(immutable_model_files) | {final_output.name}
+        unexpected_metadata = {
+            path.relative_to(metadata).as_posix()
+            for path in metadata.rglob("*")
+            if path.is_file() and path.relative_to(metadata).as_posix() not in allowed_metadata
+        }
+        model_workspace_mutated = bool(model_paths or unexpected_metadata)
         scan = _scan_child_commands(
             raw_dir / "codex-events.jsonl",
             forbidden_paths,
             worktree,
             target_aliases,
-            writer_receipt_validation["receipts"]
-            if writer_receipt_validation["valid"]
-            else [],
+            [],
+            model_read_only=True,
         )
+        protocol_failure: str | None = None
+        transaction_receipt: dict[str, Any] | None = None
+        proposal = None
+        output_valid = False
+        claim: dict[str, Any] = {}
+        writer_receipt_validation: dict[str, Any] = {
+            "valid": False,
+            "receipt_count": 0,
+            "receipts": [],
+            "errors": ["host materialization did not complete"],
+        }
+        source_repositories_unchanged = all(
+            not Path(entry["path"]).exists()
+            or (
+                _git(entry["path"], "rev-parse", "HEAD", check=False)
+                == entry["baseline_head"]
+                and not _git(
+                    entry["path"], "status", "--porcelain=v2", check=False
+                )
+            )
+            for entry in contract["repositories"].values()
+        )
+        try:
+            infrastructure = _normalize_infrastructure(
+                result.get("infrastructure_failure_class")
+            )
+            if infrastructure or int(result.get("host_policy_failure_count") or 0):
+                raise HostMaterializationError(
+                    infrastructure or "HOST_POLICY_REJECTED_CHILD_FILESYSTEM_ACCESS",
+                    "model process infrastructure gate failed",
+                )
+            if any(scan.get(name) for name in (
+                "external_path_access_detected",
+                "credential_access_detected",
+                "remote_operation_attempted",
+                "forbidden_action_detected",
+            )):
+                raise HostMaterializationError(
+                    "UNAUTHORIZED_ACTION", "higher-precedence child safety boundary failed"
+                )
+            if not source_repositories_unchanged:
+                raise HostMaterializationError(
+                    "UNAUTHORIZED_ACTION", "source repository changed before materialization"
+                )
+            proposal = validate_model_phase(
+                process_result=result,
+                output_path=final_output,
+                lane=lane,
+                schema=output_schema,
+                command_scan=scan,
+                workspace_mutated=model_workspace_mutated,
+                immutable_hashes_match=immutable_hashes_match,
+            )
+            output_valid = True
+            claim = proposal.result
+            transaction_receipt = materialize_transaction(
+                workspace=worktree,
+                metadata=metadata,
+                proposal=proposal,
+                lane=lane,
+                helper_sha256=writer_digest,
+                policy_sha256=write_policy_digest,
+                receipt_schema_path=receipt_schema_path,
+                receipt_schema_sha256=receipt_schema_digest,
+                protected_roots=tuple(
+                    Path(entry["path"]) for entry in contract["repositories"].values()
+                ),
+            )
+            writer_receipt_validation = validate_writer_receipts(
+                workspace=worktree,
+                helper_sha256=writer_digest,
+                policy_sha256=write_policy_digest,
+                target_aliases=target_aliases,
+            )
+        except HostMaterializationError as exc:
+            protocol_failure = exc.classification
+            if exc.transaction_receipt is not None:
+                transaction_receipt = exc.transaction_receipt
+        transaction_path = metadata / "host-materialization-transaction.json"
+        if transaction_path.is_file():
+            shutil.copyfile(transaction_path, raw_dir / transaction_path.name)
         shutil.rmtree(metadata, ignore_errors=True)
         shutil.rmtree(worktree / ".mtr-dogfood-r2", ignore_errors=True)
 
@@ -1127,35 +1253,24 @@ def _run_attempt(
         )
         substantive_content_ok = _substantive_lane_content(case, worktree)
         receipt_path_consistency = bool(
-            writer_receipt_validation["valid"]
-            and sorted(scan["bounded_write_targets"]) == sorted(paths)
-            and scan["bounded_write_count"] == len(paths)
+            transaction_receipt is not None
+            and transaction_receipt.get("final_status") == "committed"
+            and writer_receipt_validation["valid"]
             and writer_receipt_validation["receipt_count"] == len(paths)
+            and sorted(
+                item["target_alias"]
+                for item in writer_receipt_validation["receipts"]
+            ) == sorted(target_aliases)
         )
-        malformed_writer_invocation = bool(
-            scan["malformed_bounded_writer_invocation_detected"]
-            and not scan["bounded_write_security_violation_detected"]
-        )
-        bounded_writer_protocol_failure = bool(
-            scan["bounded_write_violation_detected"]
-            or not receipt_path_consistency
-        )
+        exact_diff_ok = sorted(paths) == sorted(allowed_write_paths)
         forbidden_action = bool(
-            claim.get("prohibited_action_attempted")
-            or scan["forbidden_action_detected"]
+            scan["forbidden_action_detected"]
             or scan["external_path_access_detected"]
             or scan["credential_access_detected"]
             or scan["remote_operation_attempted"]
-            or scan["unparseable_command_detected"]
-            or scan["bounded_write_security_violation_detected"]
-            or not bounded_write_transport_unchanged
-            or (output_valid and sorted(claim.get("changed_paths", [])) != paths)
         )
         infrastructure = _normalize_infrastructure(
             result.get("infrastructure_failure_class")
-        )
-        claim_failure = (
-            classify_model_reported_blocker(claim) if output_valid else None
         )
         validation_results: list[dict[str, Any]] = []
         may_validate = bool(
@@ -1164,14 +1279,16 @@ def _run_attempt(
             and result.get("exit_code") == 0
             and output_valid
             and schema_unchanged
+            and bounded_write_transport_unchanged
             and infrastructure is None
-            and claim_failure is None
+            and protocol_failure is None
             and paths
             and path_scope_ok
+            and exact_diff_ok
             and confidentiality_ok
             and substantive_content_ok
             and not forbidden_action
-            and not bounded_writer_protocol_failure
+            and receipt_path_consistency
         )
         validator_side_effect_free = True
         if may_validate:
@@ -1218,18 +1335,22 @@ def _run_attempt(
         )
         if required_validator_count and not validation_results:
             validation["automated_acceptance"] = False
-        failure_class = classify_external_attempt(
-            result,
-            claim,
-            output_valid=output_valid,
-            schema_unchanged=schema_unchanged,
-            changed=paths,
-            changed_paths_allowed=path_scope_ok,
-            automated_acceptance=validation["automated_acceptance"],
-            forbidden_action=forbidden_action,
-            confidentiality_ok=confidentiality_ok,
-            malformed_bounded_writer_invocation=malformed_writer_invocation,
-        )
+        if forbidden_action:
+            failure_class = "UNAUTHORIZED_ACTION"
+        elif protocol_failure:
+            failure_class = protocol_failure
+        elif not receipt_path_consistency:
+            failure_class = "HOST_MATERIALIZATION_RECEIPT_INVALID"
+        elif not exact_diff_ok or not path_scope_ok:
+            failure_class = "HOST_MATERIALIZATION_DIFF_MISMATCH"
+        elif not confidentiality_ok:
+            failure_class = "CONFIDENTIALITY_BOUNDARY"
+        elif not substantive_content_ok:
+            failure_class = "LANE_VALIDATION_FAILED"
+        elif not validation["automated_acceptance"] or not validator_side_effect_free:
+            failure_class = "LANE_VALIDATION_FAILED"
+        else:
+            failure_class = ""
         accepted = failure_class == ""
         execution_receipt = {
             "schema_version": "1.0.0",
@@ -1248,6 +1369,10 @@ def _run_attempt(
             "wall_time_seconds": result.get("wall_time_seconds"),
             "final_output_valid": output_valid,
             "schema_unchanged": schema_unchanged,
+            "model_workspace_read_only": True,
+            "model_workspace_mutation_detected": model_workspace_mutated,
+            "source_repositories_unchanged_before_materialization": source_repositories_unchanged,
+            "host_materialization_transaction": transaction_receipt,
             "bounded_write_transport_unchanged": bounded_write_transport_unchanged,
             "bounded_writer_receipt_validation": writer_receipt_validation,
             "bounded_writer_receipts_match_diff": receipt_path_consistency,
