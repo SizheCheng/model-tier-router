@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import csv
 import hashlib
 import json
@@ -70,6 +72,25 @@ CONFIDENTIAL_CONTENT_RE = re.compile(
     rb"|\bAKIA[0-9A-Z]{16}\b|\bsk-[A-Za-z0-9_-]{20,}\b"
     rb"|\bBearer\s+[A-Za-z0-9._-]{20,}",
     re.I,
+)
+BOUNDED_WRITER_RELATIVE = ".mtr-dogfood-r3/bounded-writer.py"
+BOUNDED_WRITE_POLICY_FILENAME = "bounded-write-policy.json"
+BOUNDED_WRITE_COMMAND_RE = re.compile(
+    r"(?i)^python(?:\.exe)?\s+-B\s+"
+    r"\.mtr-dogfood-r3[\\/]bounded-writer\.py\s+"
+    r"--target\s+(?P<target>[^\s]+)\s+"
+    r"--content-base64\s+(?P<content>[A-Za-z0-9+/]*={0,2})$"
+)
+BOUNDED_WRITER_MENTION_RE = re.compile(
+    r"(?i)\bbounded-writer\.py\b"
+)
+SHELL_WRITE_OPERATION_RE = re.compile(
+    r"(?ix)"
+    r"\b(?:set-content|add-content|out-file|writealltext|writeallbytes|"
+    r"write_text|write_bytes|new-item|copy-item|move-item|remove-item|"
+    r"mkdir|makedirs|touch|unlink|rmtree|copyfile|rename|replace|openwrite|"
+    r"tee|truncate|git\s+(?:add|apply|checkout|switch|branch|restore|mv|rm|init))\b"
+    r"|(?:^|[^\w])open\s*\(|\.write\s*\(|(?<![<>=])>{1,2}(?![=])"
 )
 
 
@@ -225,6 +246,77 @@ def _normalized_windows_path(path: str) -> str:
     return ntpath.normpath(path.replace("/", "\\"))
 
 
+def _exact_bounded_write_paths(patterns: list[str]) -> list[str]:
+    paths: list[str] = []
+    for pattern in patterns:
+        normalized = pattern.replace("\\", "/")
+        if (
+            not pattern
+            or normalized != pattern
+            or any(character in pattern for character in "*?[]")
+            or _windows_path_kind(pattern) != "relative"
+            or any(part in {"", ".", ".."} for part in PureWindowsPath(pattern).parts)
+        ):
+            raise ContractError("bounded write scope must enumerate canonical paths")
+        paths.append(normalized)
+    if not paths or len(set(paths)) != len(paths):
+        raise ContractError("bounded write scope must be non-empty and unique")
+    return paths
+
+
+def _inspect_bounded_write(
+    payload: str,
+    allowed_write_paths: list[str] | None,
+) -> dict[str, Any]:
+    stripped = payload.strip()
+    match = BOUNDED_WRITE_COMMAND_RE.fullmatch(stripped)
+    mentioned = bool(BOUNDED_WRITER_MENTION_RE.search(stripped))
+    if match is None:
+        return {
+            "recognized": mentioned,
+            "authorized": False,
+            "target": None,
+            "content_bytes": None,
+            "content_sha256": None,
+            "reason": "malformed_bounded_writer_command" if mentioned else None,
+        }
+    target = match.group("target")
+    encoded = match.group("content")
+    try:
+        content = base64.b64decode(encoded.encode("ascii"), validate=True)
+    except (UnicodeEncodeError, binascii.Error):
+        content = b""
+        canonical = False
+    else:
+        canonical = base64.b64encode(content).decode("ascii") == encoded
+    allowed = allowed_write_paths or []
+    authorized = bool(
+        canonical
+        and len(content) <= 1_000_000
+        and target in allowed
+        and _windows_path_kind(target) == "relative"
+        and target.replace("\\", "/") == target
+    )
+    reason = None
+    if not authorized:
+        if not canonical:
+            reason = "invalid_content_base64"
+        elif len(content) > 1_000_000:
+            reason = "content_size_limit_exceeded"
+        elif target not in allowed:
+            reason = "target_not_contract_declared"
+        else:
+            reason = "target_not_canonical_relative"
+    return {
+        "recognized": True,
+        "authorized": authorized,
+        "target": target,
+        "content_bytes": len(content) if canonical else None,
+        "content_sha256": hashlib.sha256(content).hexdigest() if canonical else None,
+        "reason": reason,
+    }
+
+
 def _windows_path_kind(path: str) -> str:
     """Classify Windows syntax before choosing a base for resolution."""
     value = _strip_matching_quotes(path)
@@ -319,6 +411,7 @@ def _scan_child_commands(
     events_path: Path,
     forbidden_paths: list[str | Path],
     worktree: Path | None = None,
+    allowed_write_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     result = {
         "forbidden_action_detected": False,
@@ -326,6 +419,9 @@ def _scan_child_commands(
         "credential_access_detected": False,
         "remote_operation_attempted": False,
         "unparseable_command_detected": False,
+        "bounded_write_violation_detected": False,
+        "bounded_write_count": 0,
+        "bounded_write_targets": [],
         "command_records": [],
     }
     if not events_path.exists():
@@ -465,6 +561,18 @@ def _scan_child_commands(
         if shell_name and shell is None:
             result["unparseable_command_detected"] = True
             result["external_path_access_detected"] = True
+        write_transport = _inspect_bounded_write(
+            path_input, allowed_write_paths
+        )
+        write_capable = bool(
+            write_transport["recognized"]
+            or SHELL_WRITE_OPERATION_RE.search(path_input)
+        )
+        if write_capable and not write_transport["authorized"]:
+            result["bounded_write_violation_detected"] = True
+        if write_transport["authorized"]:
+            result["bounded_write_count"] += 1
+            result["bounded_write_targets"].append(write_transport["target"])
         result["command_records"].append({
             "event_index": event_index,
             "event_type": event.get("type"),
@@ -484,6 +592,8 @@ def _scan_child_commands(
             "parse_succeeded": parsed and not (shell_name and shell is None),
             "executable_paths": executable_paths,
             "path_candidates": candidates,
+            "write_capable": write_capable,
+            "bounded_write_transport": write_transport,
         })
     return result
 
@@ -530,6 +640,9 @@ def _task_payload(case: dict[str, Any]) -> dict[str, Any]:
 
 def _child_prompt(case: dict[str, Any], worktree: Path) -> str:
     validators = case["validator_plan"]
+    allowed_write_paths = _exact_bounded_write_paths(
+        case["changed_path_patterns"]
+    )
     return f"""Implement one bounded task inside this assigned worktree:
 {worktree}
 
@@ -538,6 +651,16 @@ Task: {case['title']}
 
 Allowed changed paths: {json.dumps(case['changed_path_patterns'])}
 Frozen parent-run validator instructions: {json.dumps(validators)}
+
+The external Windows file_change adapter is unreliable in this runtime. For
+file-content writes, use only this runner-owned bounded helper, once per target:
+python -B {BOUNDED_WRITER_RELATIVE} --target <exact-path> --content-base64 <canonical-base64-of-UTF8>
+The exact permitted targets are: {json.dumps(allowed_write_paths)}
+Do not add quoting, redirection, pipelines, command chaining, or another writer
+to that command. The helper and its policy are hash-verified after execution.
+All other shell file writes, directory creation, file deletion, file moves, Git
+index/ref mutation, and Python or PowerShell inline writes are prohibited. The
+runner will enforce both the command record and the final changed-path diff.
 
 Read and write only inside the assigned worktree. Use only repository files and
 synthetic fixtures already present there. Do not access credentials, user
@@ -684,6 +807,40 @@ def _task_still_useful(case: dict[str, Any], repository: Path) -> None:
             raise RuntimeError("FROZEN_TASK_OR_VALIDATOR_MISSING")
 
 
+def _substantive_lane_content(case: dict[str, Any], worktree: Path) -> bool:
+    if case["case_id"] != "mtr-docs-private-executor-r1":
+        return True
+    try:
+        documentation = (worktree / "docs/dogfood-automation.md").read_text(
+            encoding="utf-8"
+        )
+        integration = (
+            worktree / "tests/integrations/test_dogfood_automation.py"
+        ).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    documentation_folded = documentation.casefold()
+    integration_folded = integration.casefold()
+    return bool(
+        len(documentation.strip()) >= 80
+        and len(integration.strip()) >= 80
+        and all(
+            token in documentation_folded
+            for token in (
+                "execution_authorized", "authorized_write_scope",
+                "recommended", "separate", "authority",
+            )
+        )
+        and all(
+            token in integration_folded
+            for token in (
+                "unittest", "assess", "execution_authorized",
+                "authorized_write_scope", "recommended",
+            )
+        )
+    )
+
+
 def _run_attempt(
     contract: dict[str, Any], case: dict[str, Any], descriptor: dict[str, Any],
     source_task_bytes: bytes, decision: dict[str, Any], profile: str,
@@ -716,8 +873,24 @@ def _run_attempt(
         local_schema = metadata / "execution-result.schema.json"
         final_output = metadata / "final-result.json"
         shutil.copyfile(root / "schemas" / "execution-result.schema.json", local_schema)
+        allowed_write_paths = _exact_bounded_write_paths(
+            case["changed_path_patterns"]
+        )
+        local_writer = metadata / Path(BOUNDED_WRITER_RELATIVE).name
+        local_write_policy = metadata / BOUNDED_WRITE_POLICY_FILENAME
+        shutil.copyfile(Path(__file__).with_name("bounded_writer.py"), local_writer)
+        write_json(local_write_policy, {
+            "schema_version": "1.0.0",
+            "workspace": str(worktree.resolve(strict=True)),
+            "allowed_paths": allowed_write_paths,
+            "max_content_bytes": 1_000_000,
+        })
         output_schema = load_json(local_schema)
         schema_digest = hashlib.sha256(local_schema.read_bytes()).hexdigest()
+        writer_digest = hashlib.sha256(local_writer.read_bytes()).hexdigest()
+        write_policy_digest = hashlib.sha256(
+            local_write_policy.read_bytes()
+        ).hexdigest()
         receipt_dir.mkdir(parents=True, exist_ok=True)
         (receipt_dir / "task.json").write_bytes(source_task_bytes)
         authority = {
@@ -787,8 +960,18 @@ def _run_attempt(
             local_schema.exists()
             and hashlib.sha256(local_schema.read_bytes()).hexdigest() == schema_digest
         )
+        bounded_write_transport_unchanged = bool(
+            local_writer.exists()
+            and local_write_policy.exists()
+            and hashlib.sha256(local_writer.read_bytes()).hexdigest() == writer_digest
+            and hashlib.sha256(local_write_policy.read_bytes()).hexdigest()
+            == write_policy_digest
+        )
         scan = _scan_child_commands(
-            raw_dir / "codex-events.jsonl", forbidden_paths, worktree
+            raw_dir / "codex-events.jsonl",
+            forbidden_paths,
+            worktree,
+            allowed_write_paths,
         )
         shutil.rmtree(metadata, ignore_errors=True)
         shutil.rmtree(worktree / ".mtr-dogfood-r2", ignore_errors=True)
@@ -801,6 +984,7 @@ def _run_attempt(
         confidentiality_ok = _confidentiality_scan(
             worktree, case["repository"], paths
         )
+        substantive_content_ok = _substantive_lane_content(case, worktree)
         forbidden_action = bool(
             claim.get("prohibited_action_attempted")
             or scan["forbidden_action_detected"]
@@ -808,6 +992,8 @@ def _run_attempt(
             or scan["credential_access_detected"]
             or scan["remote_operation_attempted"]
             or scan["unparseable_command_detected"]
+            or scan["bounded_write_violation_detected"]
+            or not bounded_write_transport_unchanged
             or (output_valid and sorted(claim.get("changed_paths", [])) != paths)
         )
         infrastructure = _normalize_infrastructure(
@@ -828,6 +1014,7 @@ def _run_attempt(
             and paths
             and path_scope_ok
             and confidentiality_ok
+            and substantive_content_ok
             and not forbidden_action
         )
         validator_side_effect_free = True
@@ -861,6 +1048,7 @@ def _run_attempt(
             forbidden_action or not validator_side_effect_free,
         )
         validation["confidentiality_scan_passed"] = confidentiality_ok
+        validation["substantive_content_passed"] = substantive_content_ok
         validation["validator_side_effect_free"] = validator_side_effect_free
         failure_class = classify_external_attempt(
             result,
@@ -891,6 +1079,7 @@ def _run_attempt(
             "wall_time_seconds": result.get("wall_time_seconds"),
             "final_output_valid": output_valid,
             "schema_unchanged": schema_unchanged,
+            "bounded_write_transport_unchanged": bounded_write_transport_unchanged,
             "filesystem_mutation_observed": filesystem_mutation,
             "validator_completed": validator_completed,
             "changed_paths": paths,

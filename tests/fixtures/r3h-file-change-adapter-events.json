@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0.0",
+  "lane_stdout": {
+    "bytes": 43114,
+    "sha256": "bc669c0a00d75b72ea67424b763b967ca8ab4ec56c3d5de73828f2fc656084d7"
+  },
+  "lane_stderr": {
+    "bytes": 1789,
+    "sha256": "8034b1b5a1e2d905e26215f84110d94cdee524f4e4e33a32cf99a139a4f7fc8e"
+  },
+  "workspace": "C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3h-final-three-start-external-packet-r1\\results\\r3h-result-20260720T2320448617271Z-15448\\workspaces\\router_lane_1\\attempt-1",
+  "targets": [
+    "docs/dogfood-automation.md",
+    "tests/integrations/test_dogfood_automation.py"
+  ],
+  "target_state_before_attempts": {
+    "targets_existed": false,
+    "parent_directories_existed": true,
+    "temporary_files_observed": false,
+    "partial_files_observed": false
+  },
+  "patch_payload_serialized_in_events": false,
+  "patch_text": null,
+  "patch_bytes": null,
+  "patch_sha256": null,
+  "patch_encoding": null,
+  "patch_line_endings": null,
+  "attempts": [
+    {
+      "attempt": 1,
+      "item_id": "item_2",
+      "started_index": 6,
+      "started_offset": 36154,
+      "started_length_with_lf": 623,
+      "started_sha256_with_lf": "157796b308a8dd15720963fd61ae6b8f51ee29c31be3cf1b59676cf3e054fb3f",
+      "completed_index": 7,
+      "completed_offset": 36777,
+      "completed_length_with_lf": 620,
+      "completed_sha256_with_lf": "6e5ccd730b4f85e09e1ab2989c48c44b0af44088177e4e2e739b09f54de9feff",
+      "changes": [
+        {
+          "path": "C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3h-final-three-start-external-packet-r1\\results\\r3h-result-20260720T2320448617271Z-15448\\workspaces\\router_lane_1\\attempt-1\\docs\\dogfood-automation.md",
+          "kind": "add"
+        },
+        {
+          "path": "C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3h-final-three-start-external-packet-r1\\results\\r3h-result-20260720T2320448617271Z-15448\\workspaces\\router_lane_1\\attempt-1\\tests\\integrations\\test_dogfood_automation.py",
+          "kind": "add"
+        }
+      ],
+      "started_status": "in_progress",
+      "completed_status": "failed",
+      "exact_error": "Failed to write file C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3h-final-three-start-external-packet-r1\\results\\r3h-result-20260720T2320448617271Z-15448\\workspaces\\router_lane_1\\attempt-1\\docs\\dogfood-automation.md"
+    },
+    {
+      "attempt": 2,
+      "item_id": "item_3",
+      "started_index": 8,
+      "started_offset": 37397,
+      "started_length_with_lf": 623,
+      "started_sha256_with_lf": "1c7803f0338be4830a499b748bb327a99bb5b4171ef1da5e244388a6ae013934",
+      "completed_index": 9,
+      "completed_offset": 38020,
+      "completed_length_with_lf": 620,
+      "completed_sha256_with_lf": "9bcafb9a2358bffcdc5fdde75290786751a7e56a2e10aea8506d4815f4ea3910",
+      "changes": [
+        {
+          "path": "C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3h-final-three-start-external-packet-r1\\results\\r3h-result-20260720T2320448617271Z-15448\\workspaces\\router_lane_1\\attempt-1\\docs\\dogfood-automation.md",
+          "kind": "add"
+        },
+        {
+          "path": "C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3h-final-three-start-external-packet-r1\\results\\r3h-result-20260720T2320448617271Z-15448\\workspaces\\router_lane_1\\attempt-1\\tests\\integrations\\test_dogfood_automation.py",
+          "kind": "add"
+        }
+      ],
+      "started_status": "in_progress",
+      "completed_status": "failed",
+      "exact_error": "Failed to write file C:\\Users\\sizhe\\Documents\\model-tier-router-dogfood\\runs\\raw\\r3h-final-three-start-external-packet-r1\\results\\r3h-result-20260720T2320448617271Z-15448\\workspaces\\router_lane_1\\attempt-1\\docs\\dogfood-automation.md"
+    }
+  ],
+  "writable_smoke_control": {
+    "stdout_bytes": 5298,
+    "stdout_sha256": "af7fdceabfbaebb2fe5810a10ef0de93a13ca48840426e585444c036183c26d8",
+    "file_change_item_ids": ["item_2", "item_3"],
+    "file_change_completed_statuses": ["failed", "failed"],
+    "target": "smoke/result.txt",
+    "shell_write_event_indices": [10, 11, 12, 13],
+    "shell_write_completed_statuses": ["completed", "completed"],
+    "written_bytes_hex": "574f524b53504143455f57524954455f4f4b0a"
+  }
+}
