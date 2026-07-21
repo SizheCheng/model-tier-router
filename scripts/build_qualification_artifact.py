@@ -119,6 +119,11 @@ def build(
             "final_execution/RUN_FINAL_REMAINING_QWEN_LANE.ps1",
             "remaining_lane_execution",
         ),
+        "product-lane": (
+            "mtr-dogfood-product-lane.pyz",
+            "final_execution/RUN_PRODUCT_LANE.ps1",
+            "product_execution",
+        ),
     }
     try:
         artifact_name, wrapper_name, module = entrypoints[entrypoint]
@@ -213,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-directory", required=True)
     parser.add_argument(
         "--entrypoint",
-        choices=("qualification", "final-execution", "remaining-lane"),
+        choices=("qualification", "final-execution", "remaining-lane", "product-lane"),
         default="qualification",
     )
     args = parser.parse_args(argv)

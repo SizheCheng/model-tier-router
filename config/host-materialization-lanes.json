@@ -7,7 +7,7 @@
       "lane_id": "writable_smoke",
       "maximum_file_count": 1,
       "maximum_aggregate_content_bytes": 19,
-      "maximum_serialized_result_bytes": 4096,
+      "maximum_serialized_result_bytes": 12288,
       "required_validation_expectations": 1,
       "aliases": [
         {
@@ -19,7 +19,13 @@
           "exact_content_bytes": 19,
           "maximum_content_bytes": 19,
           "maximum_serialized_bytes": 4096,
-          "nul_prohibited": true
+          "nul_prohibited": true,
+          "content_requirements": {
+            "minimum_utf8_bytes": 19,
+            "exact_utf8_content": "WORKSPACE_WRITE_OK\n",
+            "required_casefold_substrings": [],
+            "forbidden_casefold_substrings": []
+          }
         }
       ]
     },
@@ -39,7 +45,13 @@
           "exact_content_bytes": null,
           "maximum_content_bytes": 8192,
           "maximum_serialized_bytes": 51200,
-          "nul_prohibited": true
+          "nul_prohibited": true,
+          "content_requirements": {
+            "minimum_utf8_bytes": 80,
+            "exact_utf8_content": null,
+            "required_casefold_substrings": ["execution_authorized", "authorized_write_scope", "recommended", "separate", "authority"],
+            "forbidden_casefold_substrings": []
+          }
         },
         {
           "target_alias": "router_integration_test",
@@ -50,7 +62,13 @@
           "exact_content_bytes": null,
           "maximum_content_bytes": 16384,
           "maximum_serialized_bytes": 100352,
-          "nul_prohibited": true
+          "nul_prohibited": true,
+          "content_requirements": {
+            "minimum_utf8_bytes": 80,
+            "exact_utf8_content": null,
+            "required_casefold_substrings": ["unittest", "assess", "execution_authorized", "authorized_write_scope", "recommended"],
+            "forbidden_casefold_substrings": []
+          }
         }
       ]
     },
@@ -70,7 +88,13 @@
           "exact_content_bytes": null,
           "maximum_content_bytes": 32768,
           "maximum_serialized_bytes": 204800,
-          "nul_prohibited": true
+          "nul_prohibited": true,
+          "content_requirements": {
+            "minimum_utf8_bytes": 80,
+            "exact_utf8_content": null,
+            "required_casefold_substrings": ["vanish", "webhidden"],
+            "forbidden_casefold_substrings": []
+          }
         }
       ]
     }

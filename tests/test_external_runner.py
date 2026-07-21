@@ -245,7 +245,7 @@ class RuntimeContractTests(unittest.TestCase):
             scan = _scan_child_commands(events, [], root / "worktree")
             self.assertTrue(scan["external_path_access_detected"])
 
-    def test_qwen_confidentiality_scan_accepts_synthetic_and_rejects_key(self):
+    def test_every_product_confidentiality_scan_accepts_synthetic_and_rejects_key(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / "test_synthetic.py"
@@ -259,6 +259,9 @@ class RuntimeContractTests(unittest.TestCase):
             )
             self.assertFalse(_confidentiality_scan(
                 root, "qwen-redaction-standalone", [path.name]
+            ))
+            self.assertFalse(_confidentiality_scan(
+                root, "inventory-api-product", [path.name]
             ))
 
     def test_fixed_control_actions_are_immutable(self):

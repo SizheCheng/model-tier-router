@@ -23,10 +23,7 @@ from .router_adapter import assess_live, verify_decision
 from .runtime_contract import ProcessAccounting
 
 
-ROUTE_ID = "FINAL_REMAINING_QWEN_PRODUCT_LANE_EXECUTION_R1"
-LANE_ORDER = (
-    "qwen-docx-hidden-elements-r1",
-)
+COMPONENT_ID = "MTR_GENERIC_SINGLE_PRODUCT_EXECUTION"
 class FinalExecutionError(RuntimeError):
     pass
 
@@ -107,9 +104,20 @@ def _clone_repository(source: Path, target: Path, head: str) -> Path:
 
 
 class CampaignLedger:
-    def __init__(self, path: Path, *, qualification_only: bool) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        qualification_only: bool,
+        campaign_id: str = COMPONENT_ID,
+        ceiling: int = 1,
+        historical_accounting: dict[str, Any] | None = None,
+    ) -> None:
         self.path = path
         self.qualification_only = qualification_only
+        self.campaign_id = campaign_id
+        self.ceiling = ceiling
+        self.historical_accounting = dict(historical_accounting or {})
         self.records: list[dict[str, Any]] = []
         self._write()
 
@@ -123,12 +131,12 @@ class CampaignLedger:
     def reserve(self, lane_id: str) -> dict[str, Any]:
         if any(item["lane_id"] == lane_id for item in self.records):
             raise FinalExecutionError("DUPLICATE_LANE_RESERVATION")
-        if len(self.records) >= 1:
+        if len(self.records) >= self.ceiling:
             raise FinalExecutionError("START_RESERVATION_LIMIT_REACHED")
         record = {
             "lane_id": lane_id,
             "successor_ordinal": len(self.records) + 1,
-            "prior_r5_ordinal_1_permanently_consumed": True,
+            "historical_accounting": self.historical_accounting,
             "qualification_only": self.qualification_only,
             "reservation_state": (
                 "SIMULATED_START_RESERVATION_REQUESTED"
@@ -173,12 +181,11 @@ class CampaignLedger:
             self.path,
             {
                 "schema_version": "1.0.0",
-                "campaign_id": ROUTE_ID,
-                "ceiling": 1,
+                "campaign_id": self.campaign_id,
+                "ceiling": self.ceiling,
                 "no_retry": True,
                 "stop_on_first_failure": True,
-                "r5_ordinal_1_permanently_consumed": True,
-                "r5_ordinal_1_reclaimed": False,
+                "historical_accounting": self.historical_accounting,
                 "qualification_only": self.qualification_only,
                 "starts_consumed": self.starts_consumed,
                 "records": self.records,
@@ -211,7 +218,7 @@ def self_test() -> dict[str, Any]:
     }
     return {
         "schema_version": "1.0.0",
-        "route_id": ROUTE_ID,
+        "component_id": COMPONENT_ID,
         "status": "passed",
         "no_retry": True,
         "stop_on_first_failure": True,
@@ -227,30 +234,32 @@ def _validate_manifest(
     manifest: dict[str, Any],
     artifact: Path,
     router_repository: Path,
-    qwen_repository: Path,
+    source_repository: Path,
     *,
     qualification_only: bool,
 ) -> None:
     lanes = manifest.get("lanes", [])
+    route_id = manifest.get("route_id")
+    lane_ids = [item.get("lane_id") for item in lanes if isinstance(item, dict)]
     if (
         manifest.get("schema_version") != "1.0.0"
-        or manifest.get("route_id") != ROUTE_ID
-        or manifest.get("campaign_id") != ROUTE_ID
+        or not isinstance(route_id, str)
+        or not route_id
+        or manifest.get("campaign_id") != route_id
         or manifest.get("maximum_new_starts") != 1
         or manifest.get("no_retry") is not True
         or manifest.get("stop_on_first_failure") is not True
-        or manifest.get("r5_ordinal_1_permanently_consumed") is not True
-        or manifest.get("r5_ordinal_1_reclaimed") is not False
-        or manifest.get("r5j_reuse_authorized") is not False
-        or manifest.get("r5k_reuse_authorized") is not False
-        or manifest.get("prior_campaign") != "FINAL_TWO_PRODUCT_LANE_EXECUTION_R1"
-        or manifest.get("prior_campaign_terminal") is not True
-        or manifest.get("prior_campaign_reused") is not False
-        or manifest.get("recovered_lane") != "mtr-docs-private-executor-r1"
-        or manifest.get("remaining_lane") != LANE_ORDER[0]
-        or manifest.get("execution_order") != list(LANE_ORDER)
-        or [item.get("lane_id") for item in lanes] != list(LANE_ORDER)
         or len(lanes) != 1
+        or len(lane_ids) != 1
+        or not isinstance(lane_ids[0], str)
+        or not lane_ids[0]
+        or manifest.get("execution_order") != lane_ids
+        or not isinstance(lanes[0].get("repository_id"), str)
+        or not lanes[0].get("repository_id")
+        or not isinstance(lanes[0].get("source_branch"), str)
+        or not lanes[0].get("source_branch")
+        or not isinstance(lanes[0].get("branch_prefix"), str)
+        or not lanes[0].get("branch_prefix")
     ):
         raise FinalExecutionError("FINAL_EXECUTION_MANIFEST_INVALID")
     release = manifest.get("runtime_release", {})
@@ -260,15 +269,14 @@ def _validate_manifest(
         or release.get("source_dirty") is not embedded_release.get("source_dirty")
         or release.get("artifact_sha256") != _sha256(artifact)
         or not same_path(release.get("artifact_path", ""), artifact)
-        or embedded_release.get("entrypoint") != "remaining-lane"
+        or embedded_release.get("entrypoint") not in {"remaining-lane", "product-lane"}
         or (not qualification_only and embedded_release.get("source_dirty") is not False)
     ):
         raise FinalExecutionError("FINAL_EXECUTION_ARTIFACT_BINDING_DRIFT")
-    expected_paths = {LANE_ORDER[0]: qwen_repository}
     for lane in lanes:
         source = Path(str(lane.get("source_repository", ""))).resolve()
         router = Path(str(lane.get("router_repository", ""))).resolve()
-        if source != expected_paths[lane["lane_id"]]:
+        if source != source_repository:
             raise FinalExecutionError("SOURCE_REPOSITORY_BINDING_DRIFT")
         if router != router_repository:
             raise FinalExecutionError("ROUTER_REPOSITORY_BINDING_DRIFT")
@@ -292,24 +300,30 @@ def _run_lanes(
     launcher: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
     _materialize_support(result_root)
+    binding = manifest["lanes"][0]
+    lane_id = binding["lane_id"]
+    repository_id = binding["repository_id"]
     ledger = CampaignLedger(
         result_root / "campaign-ledger.json",
         qualification_only=qualification_only,
+        campaign_id=manifest["campaign_id"],
+        ceiling=manifest["maximum_new_starts"],
+        historical_accounting=manifest.get("historical_accounting", {}),
     )
-    budget = ProcessAccounting(maximum=1)
+    budget = ProcessAccounting(maximum=manifest["maximum_new_starts"])
     outcomes: list[dict[str, Any]] = []
     contract = {
-        "route_id": ROUTE_ID,
+        "route_id": manifest["route_id"],
         "repositories": {
             "model-tier-router": {
                 "path": str(execution_repositories["model-tier-router"]),
                 "baseline_head": manifest["router_source_head"],
                 "branch": "main",
             },
-            "qwen-redaction-standalone": {
-                "path": str(execution_repositories[LANE_ORDER[0]]),
-                "baseline_head": manifest["lanes"][0]["source_head"],
-                "branch": "qwen-redaction-r1",
+            repository_id: {
+                "path": str(execution_repositories[repository_id]),
+                "baseline_head": binding["source_head"],
+                "branch": binding["source_branch"],
             },
         },
         "reporting": {
@@ -352,7 +366,7 @@ def _run_lanes(
         decision = verify_decision(actual, expected, known_profiles)
         profile = decision["selected_profile"]
         descriptor = {
-            "branch_prefix": f"mtr-final/qwen",
+            "branch_prefix": binding["branch_prefix"],
             "automatic_fast_forward_merge": False,
         }
         reserved = False
@@ -450,16 +464,15 @@ def _run_lanes(
     )
     return {
         "schema_version": "1.0.0",
-        "route_id": ROUTE_ID,
+        "route_id": manifest["route_id"],
         "status": "passed" if qualification_passed or execution_passed else "failed",
         "qualification_only": qualification_only,
         "campaign_started": ledger.starts_consumed > 0,
-        "maximum_new_starts": 1,
+        "maximum_new_starts": manifest["maximum_new_starts"],
         "starts_consumed": ledger.starts_consumed,
         "no_retry": True,
         "stop_on_first_failure": True,
-        "r5_ordinal_1_permanently_consumed": True,
-        "r5_ordinal_1_reclaimed": False,
+        "historical_accounting": manifest.get("historical_accounting", {}),
         "outcomes": outcomes,
         "process_accounting": budget.as_dict(),
         "completed_at": _utc_now(),
@@ -470,7 +483,7 @@ def run(
     *,
     packet_root: str | Path,
     router_repository: str | Path,
-    qwen_repository: str | Path,
+    source_repository: str | Path,
     workspace_parent: str | Path,
     result_root: str | Path,
     runner_pid: int,
@@ -489,17 +502,19 @@ def run(
     manifest = load_json(packet / "FINAL_EXECUTION_MANIFEST.json")
     artifact = Path(sys.argv[0]).resolve()
     router = Path(router_repository).resolve()
-    qwen = Path(qwen_repository).resolve()
+    source = Path(source_repository).resolve()
+    binding = manifest["lanes"][0]
+    repository_id = binding["repository_id"]
     actual_repositories = {
         "model-tier-router": router,
-        LANE_ORDER[0]: qwen,
+        repository_id: source,
     }
     _validate_manifest(
         packet,
         manifest,
         artifact,
         router,
-        qwen,
+        source,
         qualification_only=qualification_only,
     )
     before = {
@@ -511,8 +526,8 @@ def run(
         or before["model-tier-router"]["status"]
     ):
         raise FinalExecutionError("ROUTER_REPOSITORY_BASELINE_DRIFT")
-    state = before[LANE_ORDER[0]]
-    if state["head"] != manifest["lanes"][0]["source_head"] or state["status"]:
+    state = before[repository_id]
+    if state["head"] != binding["source_head"] or state["status"]:
         raise FinalExecutionError("SOURCE_REPOSITORY_BASELINE_DRIFT")
 
     workspace = Path(workspace_parent).resolve()
@@ -525,10 +540,10 @@ def run(
             clone_root = Path(temporary)
             execution_repositories = {
                 "model-tier-router": router,
-                LANE_ORDER[0]: _clone_repository(
-                    qwen,
-                    clone_root / "repo-qwen",
-                    manifest["lanes"][0]["source_head"],
+                repository_id: _clone_repository(
+                    source,
+                    clone_root / "source-repository",
+                    binding["source_head"],
                 ),
             }
             closeout = _run_lanes(
@@ -579,7 +594,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--qualification-only", action="store_true")
     parser.add_argument("--packet-root")
     parser.add_argument("--router-repository")
-    parser.add_argument("--qwen-repository")
+    parser.add_argument("--source-repository", "--qwen-repository", dest="source_repository")
     parser.add_argument("--workspace-parent")
     parser.add_argument("--result-root")
     parser.add_argument("--runner-pid", type=int, default=0)
@@ -595,7 +610,7 @@ def main(argv: list[str] | None = None) -> int:
             required = (
                 "packet_root",
                 "router_repository",
-                "qwen_repository",
+                "source_repository",
                 "workspace_parent",
                 "result_root",
             )
@@ -609,7 +624,7 @@ def main(argv: list[str] | None = None) -> int:
             value = run(
                 packet_root=args.packet_root,
                 router_repository=args.router_repository,
-                qwen_repository=args.qwen_repository,
+                source_repository=args.source_repository,
                 workspace_parent=args.workspace_parent,
                 result_root=args.result_root,
                 runner_pid=args.runner_pid,
@@ -618,7 +633,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         value = {
             "schema_version": "1.0.0",
-            "route_id": ROUTE_ID,
+            "component_id": COMPONENT_ID,
             "status": "failed",
             "error_type": type(exc).__name__,
             "error": str(exc),

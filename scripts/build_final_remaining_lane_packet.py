@@ -6,12 +6,13 @@ import json
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-ROUTE_ID = "FINAL_REMAINING_QWEN_PRODUCT_LANE_EXECUTION_R1"
-R5K_RELATIVE = (
+DEFAULT_ROUTE_ID = "FINAL_REMAINING_QWEN_PRODUCT_LANE_EXECUTION_R1"
+DEFAULT_SOURCE_LANE_ID = "qwen-docx-hidden-elements-r1"
+DEFAULT_SOURCE_PACKET_RELATIVE = (
     "runs/raw/r5k-two-product-lane-successor-campaign-3-packet-r1"
 )
 
@@ -62,47 +63,116 @@ def packet_files(root: Path) -> list[Path]:
     ]
 
 
+def verify_source_packet(root: Path) -> str:
+    checksum_path = root / "PACKET_SHA256SUMS.txt"
+    manifest_path = root / "EXECUTION_MANIFEST.json"
+    if not checksum_path.is_file() or not manifest_path.is_file():
+        raise RuntimeError("SOURCE_PACKET_INCOMPLETE")
+    seen: set[str] = set()
+    for raw_line in checksum_path.read_text(encoding="utf-8").splitlines():
+        digest, separator, relative = raw_line.partition("  ")
+        parts = PurePosixPath(relative).parts
+        if (
+            not separator
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            or not relative
+            or relative in seen
+            or relative.startswith("/")
+            or "\\" in relative
+            or ":" in relative
+            or ".." in parts
+            or "results" in parts
+        ):
+            raise RuntimeError("SOURCE_PACKET_MANIFEST_INVALID")
+        path = root.joinpath(*parts)
+        if not path.is_file() or sha256(path) != digest:
+            raise RuntimeError("SOURCE_PACKET_HASH_DRIFT")
+        seen.add(relative)
+    if "EXECUTION_MANIFEST.json" not in seen:
+        raise RuntimeError("SOURCE_PACKET_MANIFEST_INVALID")
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file()
+        and path.name != "PACKET_SHA256SUMS.txt"
+        and "results" not in path.relative_to(root).parts
+    }
+    if actual != seen:
+        raise RuntimeError("SOURCE_PACKET_FILE_SET_DRIFT")
+    return sha256(checksum_path)
+
+
 def build(
     output_directory: Path,
     router_repository: Path,
-    qwen_repository: Path,
+    source_repository: Path,
+    *,
+    source_packet: Path,
+    source_lane_id: str,
+    route_id: str,
+    branch_prefix: str,
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
-    r5k = root / R5K_RELATIVE
+    if (
+        not route_id
+        or any(
+            character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+            for character in route_id
+        )
+        or not source_lane_id
+        or any(character.isspace() for character in source_lane_id)
+    ):
+        raise RuntimeError("PRODUCT_ROUTE_IDENTIFIER_INVALID")
+    branch_check = subprocess.run(
+        ["git", "check-ref-format", "--branch", f"{branch_prefix}-1"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if branch_check.returncode != 0:
+        raise RuntimeError("PRODUCT_BRANCH_PREFIX_INVALID")
+    source_packet_receipt = verify_source_packet(source_packet)
     if output_directory.exists() and any(output_directory.iterdir()):
         raise RuntimeError("FINAL_PACKET_OUTPUT_NOT_EMPTY")
     output_directory.mkdir(parents=True, exist_ok=True)
 
-    r5k_manifest = json.loads(
-        (r5k / "EXECUTION_MANIFEST.json").read_text(encoding="utf-8")
+    source_manifest = json.loads(
+        (source_packet / "EXECUTION_MANIFEST.json").read_text(encoding="utf-8")
     )
     router_state = repository_state(router_repository)
-    qwen_state = repository_state(qwen_repository)
-    if router_state["status"] or qwen_state["status"]:
+    source_state = repository_state(source_repository)
+    if router_state["status"] or source_state["status"]:
         raise RuntimeError("SOURCE_REPOSITORY_DIRTY")
     source_binding = next(
         item
-        for item in r5k_manifest["lanes"]
-        if item["lane_id"] == "qwen-docx-hidden-elements-r1"
+        for item in source_manifest["lanes"]
+        if item["lane_id"] == source_lane_id
     )
     lane_id = source_binding["lane_id"]
     frozen = output_directory / "frozen"
     frozen.mkdir()
     task_name = "task_lane_1.json"
     decision_name = "decision_lane_1.json"
-    task_source = r5k / source_binding["task_snapshot"]
-    decision_source = r5k / source_binding["decision_snapshot"]
+    task_source = source_packet / source_binding["task_snapshot"]
+    decision_source = source_packet / source_binding["decision_snapshot"]
     shutil.copyfile(task_source, frozen / task_name)
     shutil.copyfile(decision_source, frozen / decision_name)
-    if qwen_state["head"] != source_binding["source_head"]:
+    task_value = json.loads(
+        (frozen / task_name).read_text(encoding="utf-8")
+    )
+    if source_state["head"] != source_binding["source_head"]:
         raise RuntimeError("SOURCE_HEAD_DRIFT")
     lanes = [{
         "lane_id": lane_id,
         "ordinal": 1,
         "successor_ordinal": 1,
         "prior_r5_ordinal_1_permanently_consumed": True,
-        "source_repository": qwen_state["path"],
-        "source_head": qwen_state["head"],
+        "source_repository": source_state["path"],
+        "repository_id": task_value["repository"],
+        "source_branch": source_state["branch"],
+        "branch_prefix": branch_prefix,
+        "source_head": source_state["head"],
         "router_repository": router_state["path"],
         "routing_input": source_binding["routing_input"],
         "selected_profile": source_binding["selected_profile"],
@@ -123,7 +193,7 @@ def build(
             "--output-directory",
             str(output_directory),
             "--entrypoint",
-            "remaining-lane",
+            "product-lane",
         ],
         cwd=root,
         capture_output=True,
@@ -138,29 +208,28 @@ def build(
             or "FINAL_ARTIFACT_BUILD_FAILED"
         )
     artifact_manifest = json.loads(build_artifact.stdout)
-    artifact = output_directory / "mtr-dogfood-remaining-lane.pyz"
-    wrapper = output_directory / "RUN_FINAL_REMAINING_QWEN_LANE.ps1"
+    artifact = output_directory / "mtr-dogfood-product-lane.pyz"
+    wrapper = output_directory / "RUN_PRODUCT_LANE.ps1"
     manifest = {
         "schema_version": "1.0.0",
-        "route_id": ROUTE_ID,
-        "campaign_id": ROUTE_ID,
+        "route_id": route_id,
+        "campaign_id": route_id,
         "execution_order": [item["lane_id"] for item in lanes],
         "maximum_new_starts": 1,
         "no_retry": True,
         "stop_on_first_failure": True,
-        "r5_ordinal_1_permanently_consumed": True,
-        "r5_ordinal_1_reclaimed": False,
-        "r5j_reuse_authorized": False,
-        "r5k_reuse_authorized": False,
         "pre_reservation_failure_starts_consumed": 0,
         "reserved_failed_start_remains_consumed": True,
-        "prior_campaign": "FINAL_TWO_PRODUCT_LANE_EXECUTION_R1",
-        "prior_campaign_terminal": True,
-        "prior_campaign_reused": False,
-        "recovered_lane": "mtr-docs-private-executor-r1",
-        "remaining_lane": "qwen-docx-hidden-elements-r1",
+        "historical_accounting": (
+            {
+                "r5_ordinal_1_permanently_consumed": True,
+                "r5_ordinal_1_reclaimed": False,
+            }
+            if route_id == DEFAULT_ROUTE_ID
+            else {}
+        ),
         "router_source_head": router_state["head"],
-        "model_mapping": r5k_manifest["model_mapping"],
+        "model_mapping": source_manifest["model_mapping"],
         "commit_identity": {
             "name": "SizheCheng",
             "email": "ChengSizhe@proton.me",
@@ -174,11 +243,9 @@ def build(
             "wrapper_sha256": sha256(wrapper),
         },
         "historical_input": {
-            "r5k_packet_manifest_sha256": sha256(
-                r5k / "PACKET_SHA256SUMS.txt"
-            ),
-            "r5k_used_as_regression_input_only": True,
-            "r5k_campaign_reused": False,
+            "source_packet_manifest_sha256": source_packet_receipt,
+            "source_packet": str(source_packet),
+            "source_campaign_reused": False,
         },
         "lanes": lanes,
     }
@@ -205,7 +272,7 @@ def build(
     )
     return {
         "schema_version": "1.0.0",
-        "route_id": ROUTE_ID,
+        "route_id": route_id,
         "status": "prepared_no_model_execution",
         "packet_root": str(output_directory.resolve()),
         "packet_manifest_sha256": sha256(
@@ -220,6 +287,7 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
+    root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-directory", required=True)
     parser.add_argument(
@@ -227,14 +295,25 @@ def main(argv: list[str] | None = None) -> int:
         default=r"C:\Users\sizhe\Documents\model-tier-router",
     )
     parser.add_argument(
-        "--qwen-repository",
+        "--source-repository", "--qwen-repository",
+        dest="source_repository",
         default=r"C:\Users\sizhe\Documents\qwen-redaction-standalone",
     )
+    parser.add_argument(
+        "--source-packet", default=str(root / DEFAULT_SOURCE_PACKET_RELATIVE)
+    )
+    parser.add_argument("--source-lane-id", default=DEFAULT_SOURCE_LANE_ID)
+    parser.add_argument("--route-id", default=DEFAULT_ROUTE_ID)
+    parser.add_argument("--branch-prefix", default="mtr-product")
     args = parser.parse_args(argv)
     value = build(
         Path(args.output_directory).resolve(),
         Path(args.router_repository).resolve(),
-        Path(args.qwen_repository).resolve(),
+        Path(args.source_repository).resolve(),
+        source_packet=Path(args.source_packet).resolve(),
+        source_lane_id=args.source_lane_id,
+        route_id=args.route_id,
+        branch_prefix=args.branch_prefix,
     )
     sys.stdout.buffer.write(canonical(value))
     return 0

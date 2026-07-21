@@ -133,7 +133,7 @@ class ProposedFileProtocolTests(unittest.TestCase):
         self.assertFalse(self.policy["model_output_success_guaranteed"])
         self.assertTrue(self.policy["safety_independent_of_model_output_capacity"])
         expected = {
-            "writable_smoke": (1, 19, 4096),
+            "writable_smoke": (1, 19, 12288),
             "mtr-docs-private-executor-r1": (2, 24576, 155648),
             "qwen-docx-hidden-elements-r1": (1, 32768, 204800),
         }
@@ -150,7 +150,7 @@ class ProposedFileProtocolTests(unittest.TestCase):
                 self.assertGreaterEqual(
                     lane["maximum_serialized_result_bytes"],
                     lane["maximum_aggregate_content_bytes"] * 6
-                    + (0 if lane["lane_id"] == "writable_smoke" else 8192),
+                    + 8192,
                 )
 
     def test_valid_smoke_markdown_python_unicode_and_lf(self):
@@ -172,6 +172,58 @@ class ProposedFileProtocolTests(unittest.TestCase):
                 self.assertEqual(proposal.lane_id, lane_id)
                 self.assertEqual(proposal.result["lane_id"], lane_id)
 
+    def test_arbitrary_lane_uses_only_declarative_content_requirements(self):
+        custom = copy.deepcopy(self.policy)
+        custom["lanes"] = [{
+            "lane_id": "inventory-api-product-r1",
+            "maximum_file_count": 1,
+            "maximum_aggregate_content_bytes": 1024,
+            "maximum_serialized_result_bytes": 16384,
+            "required_validation_expectations": 1,
+            "aliases": [{
+                "target_alias": "inventory_test",
+                "relative_path": "tests/test_inventory.py",
+                "media_type": "text/x-python",
+                "encoding": "UTF-8",
+                "allowed_line_endings": ["LF"],
+                "exact_content_bytes": None,
+                "maximum_content_bytes": 1024,
+                "maximum_serialized_bytes": 8192,
+                "nul_prohibited": True,
+                "content_requirements": {
+                    "minimum_utf8_bytes": 20,
+                    "exact_utf8_content": None,
+                    "required_casefold_substrings": ["inventory", "unittest"],
+                    "forbidden_casefold_substrings": ["production-secret"],
+                },
+            }],
+        }]
+        second_lane = copy.deepcopy(custom["lanes"][0])
+        second_lane["lane_id"] = "billing-api-product-r1"
+        second_lane["aliases"][0]["media_type"] = "text/x-typescript"
+        custom["lanes"].append(second_lane)
+        with tempfile.TemporaryDirectory() as temporary:
+            policy_path = Path(temporary) / "policy.json"
+            policy_path.write_text(json.dumps(custom), encoding="utf-8")
+            loaded = load_lane_policy(policy_path)
+        lane = lane_contract(loaded, "inventory-api-product-r1")
+        good = {
+            "inventory_test": (
+                "import unittest\n\n"
+                "class InventoryTest(unittest.TestCase):\n"
+                "    pass\n"
+            )
+        }
+        proposal = validate_proposed_result(
+            raw_result(result_value(lane, good)), lane=lane, schema=self.schema
+        )
+        self.assertEqual(proposal.lane_id, "inventory-api-product-r1")
+        bad = {"inventory_test": "import unittest\n# no required domain token\n"}
+        self.assert_classification(
+            "LANE_VALIDATION_FAILED",
+            raw_result(result_value(lane, bad)),
+            lane,
+        )
     def test_crlf_is_preserved_when_declared(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
         proposal = validate_proposed_result(

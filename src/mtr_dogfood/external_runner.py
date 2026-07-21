@@ -219,15 +219,14 @@ def classify_external_attempt(
 
 
 def _confidentiality_scan(
-    worktree: Path, repository_id: str, paths: list[str]
+    worktree: Path, _repository_id: str, paths: list[str]
 ) -> bool:
-    if repository_id != "qwen-redaction-standalone":
-        return True
     for relative in paths:
         path = worktree / relative
-        if path.suffix.casefold() not in {".py", ".txt", ".md", ".json"}:
+        try:
+            data = path.read_bytes()
+        except OSError:
             return False
-        data = path.read_bytes()
         if len(data) > 2_000_000 or b"\x00" in data:
             return False
         if CONFIDENTIAL_CONTENT_RE.search(data):

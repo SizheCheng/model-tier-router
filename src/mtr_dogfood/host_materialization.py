@@ -57,7 +57,7 @@ LANE_FIELDS = {
     "required_validation_expectations",
     "aliases",
 }
-ALIAS_FIELDS = {
+ALIAS_REQUIRED_FIELDS = {
     "target_alias",
     "relative_path",
     "media_type",
@@ -67,6 +67,13 @@ ALIAS_FIELDS = {
     "maximum_content_bytes",
     "maximum_serialized_bytes",
     "nul_prohibited",
+}
+ALIAS_OPTIONAL_FIELDS = {"content_requirements"}
+CONTENT_REQUIREMENT_FIELDS = {
+    "minimum_utf8_bytes",
+    "exact_utf8_content",
+    "required_casefold_substrings",
+    "forbidden_casefold_substrings",
 }
 TRANSACTION_FIELDS = {
     "schema_version",
@@ -177,8 +184,6 @@ def load_lane_policy(path: str | Path) -> dict[str, Any]:
             "MODEL_OUTPUT_SCHEMA_INVALID", "lane policy proof model is invalid"
         )
     seen_lanes: set[str] = set()
-    seen_aliases: set[str] = set()
-    seen_paths: set[str] = set()
     for lane in value["lanes"]:
         if not isinstance(lane, dict) or set(lane) != LANE_FIELDS:
             raise HostMaterializationError(
@@ -210,10 +215,18 @@ def load_lane_policy(path: str | Path) -> dict[str, Any]:
                 "MODEL_OUTPUT_SCHEMA_INVALID", "lane policy lane limits are invalid"
             )
         seen_lanes.add(lane_id)
+        seen_aliases: set[str] = set()
+        seen_paths: set[str] = set()
         alias_limit_sum = 0
         serialized_limit_sum = 0
         for alias in aliases:
-            if not isinstance(alias, dict) or set(alias) != ALIAS_FIELDS:
+            if (
+                not isinstance(alias, dict)
+                or not ALIAS_REQUIRED_FIELDS.issubset(alias)
+                or not set(alias).issubset(
+                    ALIAS_REQUIRED_FIELDS | ALIAS_OPTIONAL_FIELDS
+                )
+            ):
                 raise HostMaterializationError(
                     "MODEL_OUTPUT_SCHEMA_INVALID", "lane alias fields do not match"
                 )
@@ -227,6 +240,8 @@ def load_lane_policy(path: str | Path) -> dict[str, Any]:
             exact = alias["exact_content_bytes"]
             maximum = alias["maximum_content_bytes"]
             serialized = alias["maximum_serialized_bytes"]
+            requirements = alias.get("content_requirements")
+            media_type = alias["media_type"]
             if (
                 not isinstance(name, str)
                 or not name
@@ -234,8 +249,14 @@ def load_lane_policy(path: str | Path) -> dict[str, Any]:
                 or relative != alias["relative_path"]
                 or relative in seen_paths
                 or alias["encoding"] != "UTF-8"
-                or alias["media_type"]
-                not in {"text/plain", "text/markdown", "text/x-python"}
+                or not isinstance(media_type, str)
+                or "/" not in media_type
+                or media_type != media_type.casefold()
+                or media_type.split("/", 1)[0] not in {"text", "application"}
+                or any(
+                    character not in "abcdefghijklmnopqrstuvwxyz0123456789!#$&^_.+-/"
+                    for character in media_type
+                )
                 or not isinstance(alias["allowed_line_endings"], list)
                 or not alias["allowed_line_endings"]
                 or not set(alias["allowed_line_endings"]).issubset({"LF", "CRLF"})
@@ -255,6 +276,32 @@ def load_lane_policy(path: str | Path) -> dict[str, Any]:
                     or exact > maximum
                 )
                 or alias["nul_prohibited"] is not True
+                or requirements is not None
+                and (
+                    not isinstance(requirements, dict)
+                    or set(requirements) != CONTENT_REQUIREMENT_FIELDS
+                    or not isinstance(requirements["minimum_utf8_bytes"], int)
+                    or isinstance(requirements["minimum_utf8_bytes"], bool)
+                    or requirements["minimum_utf8_bytes"] < 1
+                    or requirements["minimum_utf8_bytes"] > maximum
+                    or requirements["exact_utf8_content"] is not None
+                    and not isinstance(requirements["exact_utf8_content"], str)
+                    or not isinstance(
+                        requirements["required_casefold_substrings"], list
+                    )
+                    or not isinstance(
+                        requirements["forbidden_casefold_substrings"], list
+                    )
+                    or any(
+                        not isinstance(token, str) or not token
+                        for token in requirements["required_casefold_substrings"]
+                        + requirements["forbidden_casefold_substrings"]
+                    )
+                    or len(set(requirements["required_casefold_substrings"]))
+                    != len(requirements["required_casefold_substrings"])
+                    or len(set(requirements["forbidden_casefold_substrings"]))
+                    != len(requirements["forbidden_casefold_substrings"])
+                )
             ):
                 raise HostMaterializationError(
                     "MODEL_OUTPUT_SCHEMA_INVALID", "lane alias contract is invalid"
@@ -268,7 +315,6 @@ def load_lane_policy(path: str | Path) -> dict[str, Any]:
             lane["maximum_aggregate_content_bytes"] != alias_limit_sum
             or lane["maximum_serialized_result_bytes"]
             < alias_limit_sum * 6 + 8192
-            and lane_id != "writable_smoke"
             or lane["maximum_serialized_result_bytes"]
             < required_serialized
         ):
@@ -440,38 +486,31 @@ def validate_proposed_result(
             "aggregate content exceeds the lane limit",
         )
     by_alias = {item.target_alias: item.content for item in prepared}
-    if lane["lane_id"] == "writable_smoke":
-        substantive = by_alias.get("smoke_result") == b"WORKSPACE_WRITE_OK\n"
-    elif lane["lane_id"] == "mtr-docs-private-executor-r1":
-        documentation = by_alias.get("router_documentation", b"").decode("utf-8").casefold()
-        integration = by_alias.get("router_integration_test", b"").decode("utf-8").casefold()
-        substantive = bool(
-            len(documentation.strip()) >= 80
-            and len(integration.strip()) >= 80
-            and all(
-                token in documentation
-                for token in (
-                    "execution_authorized",
-                    "authorized_write_scope",
-                    "recommended",
-                    "separate",
-                    "authority",
+    substantive = True
+    for alias_policy in lane["aliases"]:
+        content = by_alias[alias_policy["target_alias"]]
+        requirements = alias_policy.get("content_requirements")
+        if requirements is None:
+            alias_substantive = bool(content)
+        else:
+            text = content.decode("utf-8")
+            folded = text.casefold()
+            exact = requirements["exact_utf8_content"]
+            alias_substantive = bool(
+                len(content) >= requirements["minimum_utf8_bytes"]
+                and (exact is None or text == exact)
+                and all(
+                    token.casefold() in folded
+                    for token in requirements["required_casefold_substrings"]
+                )
+                and all(
+                    token.casefold() not in folded
+                    for token in requirements["forbidden_casefold_substrings"]
                 )
             )
-            and all(
-                token in integration
-                for token in (
-                    "unittest",
-                    "assess",
-                    "execution_authorized",
-                    "authorized_write_scope",
-                    "recommended",
-                )
-            )
-        )
-    else:
-        qwen = by_alias.get("qwen_docx_hidden_elements_test", b"").decode("utf-8").casefold()
-        substantive = "vanish" in qwen and "webhidden" in qwen and len(qwen.strip()) >= 80
+        if not alias_substantive:
+            substantive = False
+            break
     if not substantive:
         raise HostMaterializationError(
             "LANE_VALIDATION_FAILED", "proposed files are empty or substantively incomplete"
