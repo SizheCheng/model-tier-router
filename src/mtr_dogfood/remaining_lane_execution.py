@@ -133,9 +133,9 @@ def _clone_repository(
         raise FinalExecutionError(
             completed.stderr.strip() or "QUALIFICATION_CLONE_FAILED"
         )
+    _git(target, "config", "core.longpaths", "true")
     _git(target, "checkout", "--quiet", "-B", branch, head)
     _git(target, "remote", "remove", "origin")
-    _git(target, "config", "core.longpaths", "true")
     if _git(target, "rev-parse", "HEAD") != head:
         raise FinalExecutionError("QUALIFICATION_CLONE_HEAD_DRIFT")
     return target
