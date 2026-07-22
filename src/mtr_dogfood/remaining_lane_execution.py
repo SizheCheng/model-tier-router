@@ -16,13 +16,28 @@ from typing import Any, Callable
 
 from .codex_runner import resolve_codex_executable
 from .config import canonical_json_bytes, is_contained, load_json, same_path
-from .external_runner import _run_attempt, default_launcher
-from .host_materialization import lane_contract as host_lane_contract, load_lane_policy
+from .external_runner import (
+    BOUNDED_WRITE_POLICY_FILENAME,
+    BOUNDED_WRITER_RELATIVE,
+    _exact_bounded_write_paths,
+    _render_plan,
+    _run_attempt,
+    _target_aliases,
+    default_launcher,
+)
+from .host_materialization import (
+    alias_map as host_alias_map,
+    lane_contract as host_lane_contract,
+    load_lane_policy,
+    materialize_transaction,
+    validate_proposed_result,
+)
 from .process_ancestry import verify_standalone_powershell, windows_process_provider
 from .qualification import ASSETS, _resource_bytes, verify_packet
 from .router_adapter import assess_live, verify_decision
 from .runtime_contract import ProcessAccounting
-from .validation import validate_validator_authority
+from .git_worktrees import changed_paths, commit_exact_paths, diff_bytes
+from .validation import paths_allowed, run_plan, summarize_validation, validate_validator_authority
 
 
 COMPONENT_ID = "MTR_GENERIC_SINGLE_PRODUCT_EXECUTION"
@@ -457,6 +472,142 @@ def _verify_reservation_inputs(
         ):
             raise FinalExecutionError("PRE_RESERVATION_REPOSITORY_DRIFT")
 
+
+def _run_candidate_qualification(
+    *,
+    packet: Path,
+    manifest: dict[str, Any],
+    actual_repositories: dict[str, Path],
+    execution_repository: Path,
+    binding: dict[str, Any],
+    case: dict[str, Any],
+    qualification_candidate: Path,
+    result_root: Path,
+) -> dict[str, Any]:
+    worktree = execution_repository
+    lane_id = binding["lane_id"]
+    metadata = worktree / Path(BOUNDED_WRITER_RELATIVE).parent
+    metadata.mkdir(parents=True, exist_ok=False)
+    local_schema = metadata / "proposed-files-result.schema.json"
+    local_lane_policy = metadata / "host-materialization-lanes.json"
+    local_writer = metadata / Path(BOUNDED_WRITER_RELATIVE).name
+    local_write_policy = metadata / BOUNDED_WRITE_POLICY_FILENAME
+    receipt_schema_path = metadata / "bounded-writer-receipt.schema.json"
+    local_schema.write_bytes(_resource_bytes("proposed-files-result.schema.json"))
+    local_lane_policy.write_bytes(
+        _packet_file(packet, manifest["lane_policy"]["snapshot"]).read_bytes()
+    )
+    local_writer.write_bytes(_resource_bytes("bounded-writer.py"))
+    receipt_schema_path.write_bytes(_resource_bytes("bounded-writer-receipt.schema.json"))
+    lane_policy = load_lane_policy(local_lane_policy)
+    lane = host_lane_contract(lane_policy, lane_id)
+    allowed_write_paths = _exact_bounded_write_paths(case["changed_path_patterns"])
+    target_aliases = _target_aliases(allowed_write_paths, host_alias_map(lane))
+    if target_aliases != host_alias_map(lane):
+        raise FinalExecutionError("QUALIFICATION_LANE_POLICY_PATH_MISMATCH")
+    _write_json(local_write_policy, {
+        "schema_version": "2.0.0",
+        "workspace": str(worktree.resolve(strict=True)),
+        "target_aliases": target_aliases,
+        "max_content_bytes": max(
+            item["maximum_content_bytes"] for item in lane["aliases"]
+        ),
+    })
+    proposal = validate_proposed_result(
+        qualification_candidate.read_bytes(),
+        lane=lane,
+        schema=load_json(local_schema),
+    )
+    receipt_schema_digest = hashlib.sha256(receipt_schema_path.read_bytes()).hexdigest()
+    writer_digest = hashlib.sha256(local_writer.read_bytes()).hexdigest()
+    policy_digest = hashlib.sha256(local_write_policy.read_bytes()).hexdigest()
+    raw_dir = result_root / "raw" / lane_id / "qualification"
+    receipt_dir = result_root / "receipts" / lane_id / "qualification"
+    run_temp = raw_dir / "validator-temp"
+    (run_temp / "validation" / "atomic").mkdir(parents=True, exist_ok=True)
+    transaction = materialize_transaction(
+        workspace=worktree,
+        metadata=metadata,
+        proposal=proposal,
+        lane=lane,
+        helper_sha256=writer_digest,
+        policy_sha256=policy_digest,
+        receipt_schema_path=receipt_schema_path,
+        receipt_schema_sha256=receipt_schema_digest,
+        protected_roots=tuple(actual_repositories.values()),
+    )
+    receipt_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(receipt_dir / "host-materialization-transaction.json", transaction)
+    shutil.rmtree(metadata)
+    paths = changed_paths(worktree)
+    patch = diff_bytes(worktree)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / "target-diff.patch").write_bytes(patch)
+    exact_diff_ok = sorted(paths) == sorted(allowed_write_paths)
+    path_scope_ok = paths_allowed(paths, case["changed_path_patterns"])
+    validation_results = run_plan(
+        worktree,
+        _render_plan(case["validator_plan"], worktree, run_temp),
+        raw_dir,
+    )
+    post_validator_paths = changed_paths(worktree)
+    validator_side_effect_free = post_validator_paths == paths
+    if not validator_side_effect_free:
+        paths = post_validator_paths
+        path_scope_ok = paths_allowed(paths, case["changed_path_patterns"])
+        (raw_dir / "target-diff-after-validator.patch").write_bytes(
+            diff_bytes(worktree)
+        )
+    validation = summarize_validation(
+        True,
+        exact_diff_ok and path_scope_ok,
+        validation_results,
+        not validator_side_effect_free,
+    )
+    required_validator_count = len(case["validator_plan"]["commands"])
+    validation["required_validator_count"] = required_validator_count
+    validation["validation_ran"] = bool(validation_results)
+    validation["validator_stage_passed"] = bool(
+        (
+            required_validator_count == 0
+            or len(validation_results) == required_validator_count
+        )
+        and all(item.get("passed") for item in validation_results)
+    )
+    validation["validator_side_effect_free"] = validator_side_effect_free
+    validation["exact_changed_paths"] = exact_diff_ok
+    validation["changed_paths_allowed"] = path_scope_ok
+    accepted = bool(validation["automated_acceptance"])
+    commit_head = None
+    if accepted:
+        commit_head = commit_exact_paths(
+            worktree,
+            paths,
+            f"Qualify {lane_id}",
+            manifest["commit_identity"]["name"],
+            manifest["commit_identity"]["email"],
+        )
+    return {
+        "lane_id": lane_id,
+        "status": "passed" if accepted else "failed",
+        "accepted": accepted,
+        "child_process_started": False,
+        "qualification_fixture": True,
+        "qualification_state": (
+            "POST_MATERIALIZATION_VALIDATED"
+            if accepted
+            else "POST_MATERIALIZATION_FAILED"
+        ),
+        "changed_paths": paths,
+        "commit": commit_head,
+        "validation": validation,
+        "host_materialization": {
+            "transaction_status": transaction["final_status"],
+            "proposal_sha256": proposal.serialized_sha256,
+        },
+        "real_model_process_starts": 0,
+        "real_model_requests": 0,
+    }
 def _run_lanes(
     *,
     packet: Path,
@@ -599,23 +750,37 @@ def _run_lanes(
             return launcher(**kwargs)
 
         try:
-            outcome = _run_attempt(
-                contract,
-                copy.deepcopy(case),
-                descriptor,
-                task_bytes,
-                decision,
-                profile,
-                1,
-                0,
-                budget,
-                reserved_launcher,
-                ancestry_guard,
-                (lambda: "codex.exe")
-                if qualification_only
-                else resolve_codex_executable,
-                result_root,
-            )
+            if qualification_only:
+                ledger.reserve(lane_id)
+                reserved = True
+                if qualification_candidate is None:
+                    raise ReservationBoundaryReached(lane_id)
+                outcome = _run_candidate_qualification(
+                    packet=packet,
+                    manifest=manifest,
+                    actual_repositories=actual_repositories,
+                    execution_repository=execution_repositories[repository_id],
+                    binding=binding,
+                    case=copy.deepcopy(case),
+                    qualification_candidate=qualification_candidate,
+                    result_root=result_root,
+                )
+            else:
+                outcome = _run_attempt(
+                    contract,
+                    copy.deepcopy(case),
+                    descriptor,
+                    task_bytes,
+                    decision,
+                    profile,
+                    1,
+                    0,
+                    budget,
+                    reserved_launcher,
+                    ancestry_guard,
+                    resolve_codex_executable,
+                    result_root,
+                )
         except ReservationBoundaryReached:
             ledger.finish(
                 lane_id,
@@ -673,6 +838,14 @@ def _run_lanes(
             )
             outcome["real_model_process_starts"] = 0
             outcome["real_model_requests"] = 0
+            budget.record_result(
+                {},
+                final_output_valid=bool(outcome.get("accepted")),
+                filesystem_mutation=bool(outcome.get("changed_paths")),
+                validator_completed=bool(
+                    outcome.get("validation", {}).get("validation_ran")
+                ),
+            )
         process_started = bool(outcome.get("child_process_started"))
         accepted = bool(outcome.get("accepted"))
         terminal_status = str(outcome.get("failure_class") or "accepted")
