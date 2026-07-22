@@ -181,6 +181,12 @@ class CodexAppEnforcementTests(unittest.TestCase):
         self.assertTrue(classify_development("implement tests", "C:\\outside"))
         self.assertFalse(classify_development("translate this sentence", "C:\\outside"))
 
+    def test_foreign_windows_path_is_not_repository_context_on_posix(self):
+        with mock.patch("model_tier_router.codex_app.os.name", "posix"):
+            self.assertFalse(
+                classify_development("translate this sentence", "C:\\outside")
+            )
+
     def test_large_tool_result_is_compacted_without_losing_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

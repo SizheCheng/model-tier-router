@@ -11,7 +11,7 @@ import sys
 import tempfile
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Iterable
 
 
@@ -198,6 +198,8 @@ def _safe_identifier(value: Any, *, fallback: str) -> str:
 
 
 def _is_repository_context(cwd: str) -> bool:
+    if os.name != "nt" and PureWindowsPath(cwd).is_absolute():
+        return False
     try:
         current = Path(cwd).resolve(strict=False)
     except (OSError, RuntimeError):
