@@ -26,6 +26,7 @@ def _repository(path: Path) -> str:
     (path / "README.md").write_text("fixture\n", encoding="utf-8")
     for command in (
         ["git", "init", "-q", "-b", "main"],
+        ["git", "config", "core.longpaths", "true"],
         ["git", "config", "user.name", "Matrix Fixture"],
         ["git", "config", "user.email", "fixture.invalid"],
         ["git", "add", "README.md"],
