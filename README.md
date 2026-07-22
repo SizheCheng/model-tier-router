@@ -59,3 +59,22 @@ Run the harness self-test with:
 $env:PYTHONPATH = "src"
 python -B -m unittest discover -s tests -v
 ```
+
+## Generic product component
+
+Schema-v2 product contracts can build a one-lane, no-retry packet for any clean Git
+repository whose bounded change and trusted repository-owned validators fit the
+published authority. Qualification uses a frozen synthetic candidate and starts no
+model. Three heterogeneous qualification packets must pass the release evaluator
+before any separately authorized real canaries are created; three accepted low-risk
+real canaries on one runtime release must then pass the readiness evaluator before
+default product-development use.
+
+```powershell
+python -B scripts/evaluate_product_release.py --packet-root <qualification-packet> ...
+python -B scripts/evaluate_product_readiness.py --packet-root <real-canary-packet> ...
+```
+
+See `docs/generic-product-execution.md` for the contract, evidence, and promotion
+gates. Networked validators, secrets, confidential inputs, binary execution, and
+cross-repository atomic writes remain outside this component's current authority.

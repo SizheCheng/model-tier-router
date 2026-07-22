@@ -12,6 +12,8 @@ dependencies = []
 
 [project.scripts]
 mtr-dogfood = "mtr_dogfood.cli:main"
+mtr-dogfood-evaluate-release = "mtr_dogfood.product_release:main"
+mtr-dogfood-evaluate-readiness = "mtr_dogfood.product_readiness:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

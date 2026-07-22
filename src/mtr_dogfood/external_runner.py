@@ -1107,7 +1107,7 @@ def _run_attempt(
     result: dict[str, Any] = {}
     output_valid = False
     filesystem_mutation = False
-    validator_completed = False
+    validator_completed = 0
     try:
         metadata = worktree / Path(BOUNDED_WRITER_RELATIVE).parent
         metadata.mkdir(parents=True, exist_ok=False)
@@ -1500,7 +1500,7 @@ def _run_attempt(
                 _render_plan(case["validator_plan"], worktree, run_temp),
                 raw_dir,
             )
-            validator_completed = True
+            validator_completed = len(validation_results)
             post_validator_paths = changed_paths(worktree)
             if post_validator_paths != paths:
                 validator_side_effect_free = False

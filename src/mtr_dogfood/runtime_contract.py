@@ -75,8 +75,11 @@ class ProcessAccounting:
         *,
         final_output_valid: bool,
         filesystem_mutation: bool,
-        validator_completed: bool,
+        validator_completed: bool | int,
     ) -> None:
+        validator_count = int(validator_completed)
+        if validator_count < 0:
+            raise ValueError("validator_completed must be non-negative")
         self.model_execution_observed += int(
             bool(result.get("model_execution_observed"))
         )
@@ -85,7 +88,7 @@ class ProcessAccounting:
         )
         self.final_output_validated += int(final_output_valid)
         self.filesystem_mutation_observed += int(filesystem_mutation)
-        self.validator_completed += int(validator_completed)
+        self.validator_completed += validator_count
 
     def as_dict(self) -> dict[str, int]:
         return {

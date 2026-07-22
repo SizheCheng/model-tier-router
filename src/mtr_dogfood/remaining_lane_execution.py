@@ -842,8 +842,8 @@ def _run_lanes(
                 {},
                 final_output_valid=bool(outcome.get("accepted")),
                 filesystem_mutation=bool(outcome.get("changed_paths")),
-                validator_completed=bool(
-                    outcome.get("validation", {}).get("validation_ran")
+                validator_completed=len(
+                    outcome.get("validation", {}).get("validator_results", [])
                 ),
             )
         process_started = bool(outcome.get("child_process_started"))

@@ -580,14 +580,24 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 capture_output=True, text=True, check=True,
             ).stdout.strip()
             validator_plan = {
-                "commands": [{
-                    "name": "shape", "layer": "focused",
-                    "command": [
-                        "python", "-B", "-m", "unittest", "discover",
-                        "-s", "tests", "-p", "test_inventory.py",
-                    ],
-                    "timeout_seconds": 60,
-                }]
+                "commands": [
+                    {
+                        "name": "shape", "layer": "focused",
+                        "command": [
+                            "python", "-B", "-m", "unittest", "discover",
+                            "-s", "tests", "-p", "test_inventory.py",
+                        ],
+                        "timeout_seconds": 60,
+                    },
+                    {
+                        "name": "full-shape", "layer": "full",
+                        "command": [
+                            "python", "-B", "-m", "unittest", "discover",
+                            "-s", "tests", "-p", "test_inventory.py",
+                        ],
+                        "timeout_seconds": 60,
+                    },
+                ]
             }
             lane_id = "inventory-typescript-contract-r1"
             contract = {
@@ -733,6 +743,17 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(
                 closeout["outcomes"][0]["qualification_state"],
                 "POST_MATERIALIZATION_VALIDATED",
+            )
+            self.assertEqual(
+                closeout["process_accounting"]["validator_completed"], 2
+            )
+            self.assertEqual(
+                len(
+                    closeout["outcomes"][0]["validation"][
+                        "validator_results"
+                    ]
+                ),
+                2,
             )
 
             failing_contract = json.loads(json.dumps(contract))

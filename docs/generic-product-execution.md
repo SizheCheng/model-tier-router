@@ -125,6 +125,26 @@ A frozen candidate proves that the harness, product contract, materialization pa
 and validators are compatible. It does not predict model quality and is never used
 as the accepted result of a real campaign.
 
+After at least three heterogeneous qualification packets have completed, evaluate
+the release without launching a model:
+
+~~~powershell
+python -B scripts/evaluate_product_release.py `
+  --packet-root C:\path\to\qualification-1 `
+  --packet-root C:\path\to\qualification-2 `
+  --packet-root C:\path\to\qualification-3 `
+  --output C:\path\to\product-release-qualification.json
+~~~
+
+This gate re-verifies each packet and every internal task, decision, policy,
+candidate, product-contract, runtime, closeout, exact changed path, and validator
+binding. It requires three distinct repositories, three distinct route/lane
+identities, at least two media families, one clean runtime source HEAD, and one
+artifact SHA-256. Validator accounting is the exact number of completed commands,
+not merely a boolean validation-stage marker. Passing this gate authorizes only the
+creation of separately approved real-canary packets; it does not authorize a model
+start and does not make the component a default executor.
+
 ## Default-use promotion gate
 
 Controlled single-product use begins after clean release qualification. Default use
@@ -144,8 +164,11 @@ python -B scripts/evaluate_product_readiness.py `
   --output C:\path\to\product-readiness.json
 ~~~
 
-The evaluator remains fail-closed until every gate is satisfied. It never launches a
-model or mutates a product repository.
+The evaluator remains fail-closed until every gate is satisfied. Each accepted
+canary must be low risk, carry the exact zero-model pre-reservation qualification,
+show exactly one reserved and completed model process, bind its packet/runtime
+hashes, complete every declared validator command, and retain a terminal one-start
+latch. The evaluator never launches a model or mutates a product repository.
 
 ## Packet-lifetime consumption
 
