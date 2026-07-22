@@ -126,19 +126,22 @@ and validators are compatible. It does not predict model quality and is never us
 as the accepted result of a real campaign.
 
 Run a complete three-or-more-product matrix with one command. The matrix preflights
-all contracts and clean baselines before creating its release root, processes products
-in declaration order, and stops on the first build or qualification failure:
+all contracts and clean baselines before creating its release root, requires a clean
+disposable workspace root disjoint from every source and the release root, processes
+products in declaration order, and stops on the first build or qualification failure:
 
 ~~~powershell
 python -B scripts/run_product_release_matrix.py `
   --matrix C:\path\to\product-release-matrix.json `
   --router-repository C:\path\to\model-tier-router `
-  --release-root C:\path\to\zero-model-release
+  --release-root C:\path\to\zero-model-release `
+  --workspace-root C:\path\outside\all\source-repositories
 ~~~
 
 Paths inside the matrix are resolved relative to the matrix file. Packet names,
 route IDs, lane IDs, repository IDs, and repository paths must all be distinct. The
-matrix writes a frozen input snapshot and `product-release-closeout.json`; every
+matrix writes a frozen input snapshot, per-step command/stdout/stderr hash evidence, and
+`product-release-closeout.json`; every
 success and failure report declares zero model starts and zero model requests.
 
 After at least three heterogeneous qualification packets have completed, evaluate

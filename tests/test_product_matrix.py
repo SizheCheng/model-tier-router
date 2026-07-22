@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from mtr_dogfood.product_matrix import (
     ProductMatrixError,
+    _run_command,
     _strict_json,
     execute_matrix,
     load_matrix,
@@ -133,6 +135,40 @@ class ProductMatrixTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _strict_json(b'{"a":NaN}')
 
+    def test_failed_command_persists_hash_bound_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stderr = "synthetic traceback\n"
+
+            def runner(command, **kwargs):
+                return subprocess.CompletedProcess(
+                    command, 2, stdout="", stderr=stderr
+                )
+
+            digest = hashlib.sha256(stderr.encode("utf-8")).hexdigest()
+            with self.assertRaisesRegex(
+                ProductMatrixError,
+                f"build:COMMAND_FAILED_EXIT_2:STDERR_SHA256_{digest}",
+            ):
+                _run_command(
+                    ["fixture-builder"],
+                    cwd=root,
+                    timeout_seconds=1,
+                    runner=runner,
+                    evidence_directory=root / "evidence",
+                    label="build",
+                )
+            evidence = root / "evidence"
+            self.assertEqual(
+                (evidence / "build.stderr.txt").read_text(encoding="utf-8"),
+                stderr,
+            )
+            metadata = json.loads(
+                (evidence / "build.command.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["exit_code"], 2)
+            self.assertEqual(metadata["stderr_sha256"], digest)
+
     def test_matrix_preflight_binds_three_clean_distinct_products(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -154,6 +190,22 @@ class ProductMatrixTests(unittest.TestCase):
                 ProductMatrixError, "PRODUCT_MATRIX_PRODUCT_IDENTITY_REUSED"
             ):
                 load_matrix(matrix)
+
+    def test_workspace_root_must_be_disjoint_from_every_product(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            matrix, router = _matrix_fixture(root)
+            with self.assertRaisesRegex(
+                ProductMatrixError,
+                "PRODUCT_MATRIX_WORKSPACE_ROOT_OVERLAPS_PROTECTED_PATH",
+            ):
+                execute_matrix(
+                    matrix,
+                    router_repository=router,
+                    release_root=root / "release",
+                    workspace_root=root / "product-1" / "workspaces",
+                )
+            self.assertFalse((root / "release").exists())
 
     def test_execute_matrix_builds_and_qualifies_all_before_release_gate(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -181,12 +233,17 @@ class ProductMatrixTests(unittest.TestCase):
                 matrix,
                 router_repository=router,
                 release_root=root / "release",
+                workspace_root=root / "matrix-workspaces",
                 runner=runner,
                 evaluator=evaluator,
             )
             self.assertEqual(result["status"], "passed")
             self.assertEqual(result["product_count"], 3)
             self.assertEqual(len(calls), 6)
+            self.assertEqual(
+                len(list((root / "release" / "diagnostics").rglob("*.*"))),
+                18,
+            )
             self.assertEqual(result["real_model_process_starts"], 0)
             self.assertTrue(
                 result["eligible_for_separately_authorized_real_canaries"]
@@ -217,11 +274,17 @@ class ProductMatrixTests(unittest.TestCase):
                 matrix,
                 router_repository=router,
                 release_root=root / "release",
+                workspace_root=root / "matrix-workspaces",
                 runner=runner,
                 evaluator=lambda packets: self.fail("release evaluator must not run"),
             )
             self.assertEqual(result["status"], "failed")
-            self.assertEqual(result["failure"], "VALIDATOR_FAILED")
+            self.assertEqual(
+                result["failed_step"], "product-2:qualification"
+            )
+            self.assertEqual(
+                result["failure"], "qualification:VALIDATOR_FAILED"
+            )
             self.assertEqual(result["product_count"], 1)
             self.assertEqual(len(calls), 4)
             self.assertEqual(result["real_model_process_starts"], 0)

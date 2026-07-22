@@ -190,6 +190,8 @@ def _run_command(
     cwd: Path,
     timeout_seconds: int,
     runner: CommandRunner,
+    evidence_directory: Path,
+    label: str,
 ) -> dict[str, Any]:
     completed = runner(
         command,
@@ -199,24 +201,70 @@ def _run_command(
         check=False,
         timeout=timeout_seconds,
     )
-    try:
-        payload = _strict_json(completed.stdout.encode("utf-8"))
-    except (UnicodeError, ValueError) as exc:
-        raise ProductMatrixError("PRODUCT_MATRIX_COMMAND_OUTPUT_INVALID") from exc
-    if not isinstance(payload, dict):
-        raise ProductMatrixError("PRODUCT_MATRIX_COMMAND_OUTPUT_INVALID")
-    if completed.returncode != 0:
-        raise ProductMatrixError(
-            str(payload.get("error") or payload.get("failure") or "PRODUCT_MATRIX_COMMAND_FAILED")
+    evidence_directory.mkdir(parents=True, exist_ok=True)
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
+    (evidence_directory / f"{label}.stdout.txt").write_text(
+        stdout, encoding="utf-8", newline=""
+    )
+    (evidence_directory / f"{label}.stderr.txt").write_text(
+        stderr, encoding="utf-8", newline=""
+    )
+    (evidence_directory / f"{label}.command.json").write_bytes(
+        canonical_json_bytes(
+            {
+                "schema_version": "1.0.0",
+                "command": command,
+                "cwd": str(cwd),
+                "exit_code": completed.returncode,
+                "stdout_sha256": hashlib.sha256(
+                    stdout.encode("utf-8")
+                ).hexdigest(),
+                "stderr_sha256": hashlib.sha256(
+                    stderr.encode("utf-8")
+                ).hexdigest(),
+            }
         )
+    )
+    try:
+        payload = _strict_json(stdout.encode("utf-8"))
+    except (UnicodeError, ValueError) as exc:
+        if completed.returncode != 0:
+            raise ProductMatrixError(
+                f"{label}:COMMAND_FAILED_EXIT_{completed.returncode}:"
+                f"STDERR_SHA256_{hashlib.sha256(stderr.encode('utf-8')).hexdigest()}"
+            ) from exc
+        raise ProductMatrixError(
+            f"{label}:PRODUCT_MATRIX_COMMAND_OUTPUT_INVALID"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ProductMatrixError(
+            f"{label}:PRODUCT_MATRIX_COMMAND_OUTPUT_INVALID"
+        )
+    if completed.returncode != 0:
+        detail = payload.get("error") or payload.get("failure") or "COMMAND_FAILED"
+        raise ProductMatrixError(f"{label}:{detail}")
     return payload
 
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    try:
+        left.relative_to(right)
+        return True
+    except ValueError:
+        pass
+    try:
+        right.relative_to(left)
+        return True
+    except ValueError:
+        return False
 
 def execute_matrix(
     matrix_path: str | Path,
     *,
     router_repository: str | Path,
     release_root: str | Path,
+    workspace_root: str | Path,
     runner: CommandRunner = subprocess.run,
     evaluator: ReleaseEvaluator = evaluate_packets,
     qualification_timeout_seconds: int = 1800,
@@ -235,11 +283,26 @@ def execute_matrix(
         not root.is_dir() or any(root.iterdir())
     ):
         raise ProductMatrixError("PRODUCT_MATRIX_RELEASE_ROOT_NOT_EMPTY")
+    workspace = Path(workspace_root).resolve()
+    protected_roots = [
+        router,
+        *[item["source_repository"] for item in spec["products"]],
+    ]
+    if (
+        any(_paths_overlap(workspace, protected) for protected in protected_roots)
+        or _paths_overlap(workspace, root)
+    ):
+        raise ProductMatrixError("PRODUCT_MATRIX_WORKSPACE_ROOT_OVERLAPS_PROTECTED_PATH")
+    if workspace.exists() and (
+        not workspace.is_dir() or any(workspace.iterdir())
+    ):
+        raise ProductMatrixError("PRODUCT_MATRIX_WORKSPACE_ROOT_NOT_EMPTY")
     root.mkdir(parents=True, exist_ok=True)
+    workspace.mkdir(parents=True, exist_ok=True)
     packets_root = root / "packets"
-    workspaces_root = root / "workspaces"
+    diagnostics_root = root / "diagnostics"
     packets_root.mkdir()
-    workspaces_root.mkdir()
+    diagnostics_root.mkdir()
     matrix_snapshot = root / "product-release-matrix.json"
     matrix_snapshot.write_bytes(spec["matrix_path"].read_bytes())
 
@@ -247,9 +310,12 @@ def execute_matrix(
     product_results: list[dict[str, Any]] = []
     packet_paths: list[Path] = []
     report: dict[str, Any]
+    active_step = "matrix-start"
     try:
         for product in spec["products"]:
             packet = packets_root / product["packet_name"]
+            evidence = diagnostics_root / product["packet_name"]
+            active_step = f"{product['packet_name']}:build"
             build = _run_command(
                 [
                     sys.executable,
@@ -267,6 +333,8 @@ def execute_matrix(
                 cwd=project_root,
                 timeout_seconds=300,
                 runner=runner,
+                evidence_directory=evidence,
+                label="build",
             )
             if (
                 build.get("status") != "prepared_no_model_execution"
@@ -275,6 +343,7 @@ def execute_matrix(
                 or build.get("runtime_source_dirty") is not False
             ):
                 raise ProductMatrixError("PRODUCT_MATRIX_BUILD_EVIDENCE_INVALID")
+            active_step = f"{product['packet_name']}:qualification"
             qualification = _run_command(
                 [
                     sys.executable,
@@ -288,13 +357,15 @@ def execute_matrix(
                     "--source-repository",
                     str(product["source_repository"]),
                     "--workspace-parent",
-                    str(workspaces_root / product["packet_name"]),
+                    str(workspace / product["packet_name"]),
                     "--result-root",
                     str(packet / "results" / "qualification"),
                 ],
                 cwd=project_root,
                 timeout_seconds=qualification_timeout_seconds,
                 runner=runner,
+                evidence_directory=evidence,
+                label="qualification",
             )
             accounting = qualification.get("process_accounting", {})
             outcomes = qualification.get("outcomes", [])
@@ -345,6 +416,7 @@ def execute_matrix(
                     "real_model_requests": 0,
                 }
             )
+        active_step = "final-repository-integrity"
         if _repository_state(router) != router_state:
             raise ProductMatrixError("PRODUCT_MATRIX_ROUTER_FINAL_DRIFT")
         for product in spec["products"]:
@@ -355,6 +427,7 @@ def execute_matrix(
                 or final_state["status"]
             ):
                 raise ProductMatrixError("PRODUCT_MATRIX_SOURCE_FINAL_DRIFT")
+        active_step = "release-evaluation"
         release = evaluator(packet_paths)
         if (
             release.get("status") != "passed"
@@ -369,6 +442,7 @@ def execute_matrix(
             "status": "passed",
             "matrix_sha256": spec["matrix_sha256"],
             "router_source_head": router_state["head"],
+            "workspace_root": str(workspace),
             "product_count": len(product_results),
             "products": product_results,
             "release_evaluation": release,
@@ -384,8 +458,10 @@ def execute_matrix(
             "status": "failed",
             "matrix_sha256": spec["matrix_sha256"],
             "router_source_head": router_state["head"],
+            "workspace_root": str(workspace),
             "product_count": len(product_results),
             "products": product_results,
+            "failed_step": active_step,
             "failure_type": type(exc).__name__,
             "failure": str(exc),
             "eligible_for_separately_authorized_real_canaries": False,
@@ -404,6 +480,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--matrix", required=True)
     parser.add_argument("--router-repository", required=True)
     parser.add_argument("--release-root", required=True)
+    parser.add_argument("--workspace-root", required=True)
     parser.add_argument(
         "--qualification-timeout-seconds", type=int, default=1800
     )
@@ -417,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
             args.matrix,
             router_repository=args.router_repository,
             release_root=args.release_root,
+            workspace_root=args.workspace_root,
             qualification_timeout_seconds=args.qualification_timeout_seconds,
         )
     except Exception as exc:
