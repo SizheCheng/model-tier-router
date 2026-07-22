@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "route_id": "EXAMPLE_PRODUCT_LANE_R1",
   "repository_id": "example-product",
   "branch_prefix": "mtr-product/example",
@@ -48,5 +48,30 @@
     }]
   },
   "historical_accounting": {},
-  "qualification_release_only": true
+  "qualification_release_only": true,
+  "validator_authority": {
+    "execution_model": "trusted_repository_test_process_v1",
+    "repository_test_code_trusted": true,
+    "environment_scrubbed": true,
+    "os_sandbox_enforced": false,
+    "shell_commands_allowed": false,
+    "inline_code_allowed": false,
+    "network_access_authorized": false,
+    "external_path_access_authorized": false
+  },
+  "qualification_candidate": {
+    "schema_version": "1.0.0",
+    "status": "completed",
+    "summary": "Frozen synthetic candidate for end-to-end qualification.",
+    "notes": [],
+    "proposed_files": [{
+      "target_alias": "src_example_py",
+      "content": "EXAMPLE_VALUE = 'synthetic'\n"
+    }],
+    "validation_expectations": [{
+      "name": "focused",
+      "expectation": "The repository-owned focused test suite passes.",
+      "required": true
+    }]
+  }
 }

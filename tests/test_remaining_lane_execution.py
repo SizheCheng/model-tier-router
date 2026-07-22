@@ -18,14 +18,128 @@ from mtr_dogfood.remaining_lane_execution import (
     self_test,
 )
 from mtr_dogfood.validation import freeze_validator_plan
+from tests.r5k_regression_fixture import materialize_r5k_regression_packet
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUTER = Path(r"C:\Users\sizhe\Documents\model-tier-router")
 QWEN = Path(r"C:\Users\sizhe\Documents\qwen-redaction-standalone")
-R5K = (
-    ROOT / "runs" / "raw" / "r5k-two-product-lane-successor-campaign-3-packet-r1"
-)
+
+def qualification_contract(head: str) -> dict[str, object]:
+    lane_id = "test-generic-product-lane-r1"
+    relative_path = "docs/generic-qualification-fixture.md"
+    content = (
+        "# Qualification Fixture\n\n"
+        "This public fictional qualification fixture contains no real customer "
+        "or sensitive data and requires no network access.\n"
+    )
+    validator_plan = {
+        "commands": [{
+            "name": "qualification-fixture-shape",
+            "layer": "focused",
+            "command": [
+                "python", "-B", "-m", "pytest", "-q",
+                "tests/test_status_checks.py",
+                "--basetemp", "{run_temp}/pytest-focused",
+            ],
+            "env": {
+                "TEMP": "{run_temp}",
+                "TMP": "{run_temp}",
+                "QWEN_STAGE12LI_VALIDATION_ROOT": "{run_temp}/validation",
+                "QWEN_STAGE12LI_ATOMIC_TEMP_ROOT": "{run_temp}/validation/atomic",
+            },
+            "pythonpath_src": True,
+            "timeout_seconds": 60,
+        }]
+    }
+    return {
+        "schema_version": "2.0.0",
+        "route_id": "TEST_GENERIC_PRODUCT_EXECUTION_R1",
+        "repository_id": "qwen-redaction-standalone",
+        "branch_prefix": "mtr-test/generic",
+        "task": {
+            "schema_version": "1.0.0",
+            "case_id": lane_id,
+            "repository": "qwen-redaction-standalone",
+            "baseline_head": head,
+            "title": "qualify generic product execution",
+            "task_text": "Add one synthetic qualification fixture document.",
+            "changed_path_patterns": [relative_path],
+            "risk": "LOW_RISK",
+            "validator_plan": validator_plan,
+            "validator_plan_digest": freeze_validator_plan(validator_plan),
+            "model_timeout_seconds": 300,
+        },
+        "routing_request": {
+            "schema_version": "model_tier_router_advisory_request_v1alpha1",
+            "request_id": lane_id,
+            "requirements": {
+                "maximum_cost_class": "medium",
+                "modalities": ["text"],
+                "tool_support": True,
+            },
+            "preferences": ["higher_reasoning"],
+            "evidence": {"modalities": True, "tool_support": True},
+        },
+        "lane_policy": {
+            "schema_version": "1.0.0",
+            "model_output_success_guaranteed": False,
+            "safety_independent_of_model_output_capacity": True,
+            "lanes": [{
+                "lane_id": lane_id,
+                "maximum_file_count": 1,
+                "maximum_aggregate_content_bytes": 32768,
+                "maximum_serialized_result_bytes": 204800,
+                "required_validation_expectations": 1,
+                "aliases": [{
+                    "target_alias": "generic_qualification_fixture",
+                    "relative_path": relative_path,
+                    "media_type": "text/markdown",
+                    "encoding": "UTF-8",
+                    "allowed_line_endings": ["LF", "CRLF"],
+                    "exact_content_bytes": None,
+                    "maximum_content_bytes": 32768,
+                    "maximum_serialized_bytes": 204800,
+                    "nul_prohibited": True,
+                    "content_requirements": {
+                        "minimum_utf8_bytes": 40,
+                        "exact_utf8_content": None,
+                        "required_casefold_substrings": [
+                            "qualification", "fixture",
+                        ],
+                        "forbidden_casefold_substrings": [],
+                    },
+                }],
+            }],
+        },
+        "historical_accounting": {"prior_consumed_starts": 2},
+        "qualification_release_only": True,
+        "validator_authority": {
+            "execution_model": "trusted_repository_test_process_v1",
+            "repository_test_code_trusted": True,
+            "environment_scrubbed": True,
+            "os_sandbox_enforced": False,
+            "shell_commands_allowed": False,
+            "inline_code_allowed": False,
+            "network_access_authorized": False,
+            "external_path_access_authorized": False,
+        },
+        "qualification_candidate": {
+            "schema_version": "1.0.0",
+            "status": "completed",
+            "summary": "Frozen synthetic qualification candidate.",
+            "notes": [],
+            "proposed_files": [{
+                "target_alias": "generic_qualification_fixture",
+                "content": content,
+            }],
+            "validation_expectations": [{
+                "name": "qualification-fixture-shape",
+                "expectation": "The frozen validator passes.",
+                "required": True,
+            }],
+        },
+    }
 
 
 class RemainingLaneExecutionTests(unittest.TestCase):
@@ -132,12 +246,13 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(artifacts[0], artifacts[1])
 
     def test_builder_rejects_tampered_source_packet_and_invalid_identifiers(self):
-        if not R5K.is_dir() or not ROUTER.is_dir() or not QWEN.is_dir():
+        if not ROUTER.is_dir() or not QWEN.is_dir():
             self.skipTest("live source packets and repositories are unavailable")
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
+            r5k = materialize_r5k_regression_packet(base / "r5k", ROOT)
             tampered = base / "tampered-source"
-            shutil.copytree(R5K, tampered)
+            shutil.copytree(r5k, tampered)
             source_manifest = json.loads(
                 (tampered / "EXECUTION_MANIFEST.json").read_text(encoding="utf-8")
             )
@@ -174,7 +289,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertNotEqual(tamper_result.returncode, 0)
             self.assertIn("SOURCE_PACKET_HASH_DRIFT", tamper_result.stderr)
             extra = base / "extra-source"
-            shutil.copytree(R5K, extra)
+            shutil.copytree(r5k, extra)
             (extra / "unlisted.txt").write_text("not authorized", encoding="utf-8")
             extra_result = subprocess.run(
                 [
@@ -197,6 +312,8 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                     *common,
                     "--output-directory",
                     str(base / "invalid-route-output"),
+                    "--source-packet",
+                    str(r5k),
                     "--route-id",
                     "lowercase route",
                 ],
@@ -216,6 +333,15 @@ class RemainingLaneExecutionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             packet = base / "packet"
+            source_head = subprocess.run(
+                ["git", "-C", str(QWEN), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            contract_path = base / "product-contract.json"
+            contract_path.write_text(
+                json.dumps(qualification_contract(source_head)),
+                encoding="utf-8",
+            )
             build = subprocess.run(
                 [
                     sys.executable,
@@ -227,13 +353,8 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                     str(ROUTER),
                     "--source-repository",
                     str(QWEN),
-                    "--route-id",
-                    "TEST_GENERIC_PRODUCT_EXECUTION_R1",
-                    "--historical-accounting-json",
-                    '{"prior_consumed_starts":2}',
-                    "--branch-prefix",
-                    "mtr-test/generic",
-                    "--qualification-release-only",
+                    "--product-contract",
+                    str(contract_path),
                 ],
                 cwd=ROOT,
                 capture_output=True,
@@ -245,7 +366,9 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             manifest = json.loads(
                 (packet / "FINAL_EXECUTION_MANIFEST.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(manifest["execution_order"], ["qwen-docx-hidden-elements-r1"])
+            self.assertEqual(
+                manifest["execution_order"], ["test-generic-product-lane-r1"]
+            )
             self.assertEqual(manifest["maximum_new_starts"], 1)
             self.assertEqual(manifest["route_id"], "TEST_GENERIC_PRODUCT_EXECUTION_R1")
             self.assertEqual(manifest["historical_accounting"], {"prior_consumed_starts": 2})
@@ -287,8 +410,15 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(closeout["process_accounting"]["os_child_process_started"], 0)
             self.assertEqual(
                 closeout["outcomes"][0]["qualification_state"],
-                "START_RESERVATION_REQUESTED",
+                "POST_MATERIALIZATION_VALIDATED",
             )
+            self.assertEqual(
+                closeout["process_accounting"]["model_execution_observed"], 0
+            )
+            self.assertEqual(
+                closeout["process_accounting"]["model_execution_completed"], 0
+            )
+            self.assertEqual(closeout["process_accounting"]["validator_completed"], 1)
             self.assertTrue(closeout["source_repositories_unchanged"])
             self.assertFalse((packet / "results" / "campaign-state.json").exists())
             escaping_manifest = json.loads(json.dumps(manifest))
@@ -301,6 +431,9 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                     "schema_version": "1.0.0",
                     "source_head": manifest["runtime_release"]["source_head"],
                     "source_dirty": manifest["runtime_release"]["source_dirty"],
+                    "source_materialization": manifest["runtime_release"][
+                        "source_materialization"
+                    ],
                     "entrypoint": "product-lane",
                 },
             ):
@@ -316,6 +449,61 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                         QWEN,
                         qualification_only=True,
                     )
+                missing_candidate = json.loads(json.dumps(manifest))
+                missing_candidate["lanes"][0].pop(
+                    "qualification_candidate_snapshot"
+                )
+                missing_candidate["lanes"][0].pop(
+                    "qualification_candidate_sha256"
+                )
+                with self.assertRaisesRegex(
+                    FinalExecutionError,
+                    "QUALIFICATION_CANDIDATE_REQUIRED",
+                ):
+                    _validate_manifest(
+                        packet,
+                        missing_candidate,
+                        packet / "mtr-dogfood-product-lane.pyz",
+                        ROUTER,
+                        QWEN,
+                        qualification_only=True,
+                    )
+                invalid_authority = json.loads(json.dumps(manifest))
+                invalid_authority["lanes"][0]["validator_authority"][
+                    "os_sandbox_enforced"
+                ] = True
+                with self.assertRaisesRegex(
+                    FinalExecutionError,
+                    "QUALIFICATION_VALIDATOR_AUTHORITY_INVALID",
+                ):
+                    _validate_manifest(
+                        packet,
+                        invalid_authority,
+                        packet / "mtr-dogfood-product-lane.pyz",
+                        ROUTER,
+                        QWEN,
+                        qualification_only=True,
+                    )
+                candidate_path = packet / manifest["lanes"][0][
+                    "qualification_candidate_snapshot"
+                ]
+                candidate_bytes = candidate_path.read_bytes()
+                try:
+                    candidate_path.write_bytes(candidate_bytes + b" ")
+                    with self.assertRaisesRegex(
+                        FinalExecutionError,
+                        "QUALIFICATION_CANDIDATE_HASH_DRIFT",
+                    ):
+                        _validate_manifest(
+                            packet,
+                            manifest,
+                            packet / "mtr-dogfood-product-lane.pyz",
+                            ROUTER,
+                            QWEN,
+                            qualification_only=True,
+                        )
+                finally:
+                    candidate_path.write_bytes(candidate_bytes)
             with self.assertRaisesRegex(
                 FinalExecutionError,
                 "QUALIFICATION_RELEASE_REAL_EXECUTION_FORBIDDEN",
@@ -334,6 +522,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 "schema_version": "1.0.0",
                 "source_head": manifest["runtime_release"]["source_head"],
                 "source_dirty": True,
+                "source_materialization": "dirty_worktree_candidate",
                 "entrypoint": "product-lane",
             }
             with mock.patch(
@@ -365,11 +554,21 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             (source / "src" / "inventory.ts").write_text(
                 "export const inventory = [];\n", encoding="utf-8"
             )
+            (source / "tests").mkdir()
+            (source / "tests" / "test_inventory.py").write_text(
+                "from pathlib import Path\n"
+                "import unittest\n\n"
+                "class InventoryTests(unittest.TestCase):\n"
+                "    def test_inventory_is_approved(self):\n"
+                "        text = Path('src/inventory.ts').read_text(encoding='utf-8')\n"
+                "        self.assertIn(\"'approved'\", text)\n",
+                encoding="utf-8",
+            )
             for command in (
                 ["git", "init", "-q", "-b", "main"],
                 ["git", "config", "user.name", "Product Fixture"],
                 ["git", "config", "user.email", "fixture.invalid"],
-                ["git", "add", "src/inventory.ts"],
+                ["git", "add", "src/inventory.ts", "tests/test_inventory.py"],
                 ["git", "commit", "-q", "-m", "baseline"],
             ):
                 completed = subprocess.run(
@@ -384,15 +583,15 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 "commands": [{
                     "name": "shape", "layer": "focused",
                     "command": [
-                        "python", "-B", "-c",
-                        "from pathlib import Path; assert Path('src/inventory.ts').is_file()",
+                        "python", "-B", "-m", "unittest", "discover",
+                        "-s", "tests", "-p", "test_inventory.py",
                     ],
                     "timeout_seconds": 60,
                 }]
             }
             lane_id = "inventory-typescript-contract-r1"
             contract = {
-                "schema_version": "1.0.0",
+                "schema_version": "2.0.0",
                 "route_id": "INVENTORY_TYPESCRIPT_CONTRACT_R1",
                 "repository_id": "inventory-product",
                 "branch_prefix": "mtr-product/inventory",
@@ -445,6 +644,34 @@ class RemainingLaneExecutionTests(unittest.TestCase):
                 },
                 "historical_accounting": {"prior_consumed_starts": 0},
                 "qualification_release_only": True,
+                "validator_authority": {
+                    "execution_model": "trusted_repository_test_process_v1",
+                    "execution_model": "trusted_repository_test_process_v1",
+            "repository_test_code_trusted": True,
+            "environment_scrubbed": True,
+            "os_sandbox_enforced": False,
+                    "environment_scrubbed": True,
+                    "os_sandbox_enforced": False,
+                    "shell_commands_allowed": False,
+                    "inline_code_allowed": False,
+                    "network_access_authorized": False,
+                    "external_path_access_authorized": False,
+                },
+                "qualification_candidate": {
+                    "schema_version": "1.0.0",
+                    "status": "completed",
+                    "summary": "Frozen inventory qualification candidate.",
+                    "notes": [],
+                    "proposed_files": [{
+                        "target_alias": "inventory_typescript",
+                        "content": "export const inventory = ['approved'];\n",
+                    }],
+                    "validation_expectations": [{
+                        "name": "shape",
+                        "expectation": "The inventory fixture exists.",
+                        "required": True,
+                    }],
+                },
             }
             contract_path = base / "product-contract.json"
             contract_path.write_text(json.dumps(contract), encoding="utf-8")
@@ -467,7 +694,7 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(manifest["lanes"][0]["lane_id"], lane_id)
             self.assertEqual(
                 manifest["historical_input"]["input_mode"],
-                "declarative_product_contract_v1",
+                "declarative_product_contract_v2",
             )
             frozen_contract = (
                 packet
@@ -505,7 +732,65 @@ class RemainingLaneExecutionTests(unittest.TestCase):
             self.assertEqual(closeout["starts_consumed"], 0)
             self.assertEqual(
                 closeout["outcomes"][0]["qualification_state"],
-                "START_RESERVATION_REQUESTED",
+                "POST_MATERIALIZATION_VALIDATED",
+            )
+
+            failing_contract = json.loads(json.dumps(contract))
+            failing_contract["route_id"] = "INVENTORY_VALIDATOR_FAILURE_R1"
+            failing_contract["qualification_candidate"]["proposed_files"][0][
+                "content"
+            ] = "export const inventory = ['synthetic'];\n"
+            failing_contract_path = base / "failing-product-contract.json"
+            failing_contract_path.write_text(
+                json.dumps(failing_contract), encoding="utf-8"
+            )
+            failing_packet = base / "failing-packet"
+            failing_build = subprocess.run(
+                [
+                    sys.executable, "-B",
+                    str(ROOT / "scripts" / "build_product_lane_packet.py"),
+                    "--output-directory", str(failing_packet),
+                    "--router-repository", str(ROUTER),
+                    "--source-repository", str(source),
+                    "--product-contract", str(failing_contract_path),
+                ],
+                cwd=ROOT, capture_output=True, text=True, check=False, timeout=240,
+            )
+            self.assertEqual(
+                failing_build.returncode,
+                0,
+                failing_build.stderr + failing_build.stdout,
+            )
+            failing_result = failing_packet / "results" / "qualification"
+            failing_qualification = subprocess.run(
+                [
+                    sys.executable, "-B",
+                    str(failing_packet / "mtr-dogfood-product-lane.pyz"),
+                    "--qualification-only", "--packet-root", str(failing_packet),
+                    "--router-repository", str(ROUTER),
+                    "--source-repository", str(source),
+                    "--workspace-parent", str(base / "failing-workspaces"),
+                    "--result-root", str(failing_result),
+                ],
+                cwd=ROOT, capture_output=True, text=True, check=False, timeout=240,
+            )
+            self.assertNotEqual(failing_qualification.returncode, 0)
+            failed = json.loads(failing_qualification.stdout)
+            self.assertEqual(failed["status"], "failed")
+            self.assertFalse(failed["campaign_started"])
+            self.assertEqual(failed["starts_consumed"], 0)
+            self.assertEqual(
+                failed["outcomes"][0]["qualification_state"],
+                "POST_MATERIALIZATION_FAILED",
+            )
+            self.assertEqual(
+                failed["process_accounting"]["os_child_process_started"], 0
+            )
+            self.assertEqual(
+                failed["process_accounting"]["model_execution_observed"], 0
+            )
+            self.assertFalse(
+                (failing_packet / "results" / "campaign-state.json").exists()
             )
 
 

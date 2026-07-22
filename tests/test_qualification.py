@@ -8,17 +8,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.build_qualification_artifact import materialize_head
 from mtr_dogfood.qualification import self_test, verify_packet
 from mtr_dogfood.router_adapter import verify_decision
+from tests.r5k_regression_fixture import materialize_r5k_regression_packet
 
 
 ROOT = Path(__file__).resolve().parents[1]
-R5K = (
-    ROOT
-    / "runs"
-    / "raw"
-    / "r5k-two-product-lane-successor-campaign-3-packet-r1"
-)
 
 
 class QualificationTests(unittest.TestCase):
@@ -49,6 +45,50 @@ class QualificationTests(unittest.TestCase):
         self.assertNotIn("$PSScriptRoot", param_block)
         self.assertIn("Join-Path $PSScriptRoot", text)
 
+    def test_tracked_text_policy_and_head_materialization_preserve_lf_bytes(self):
+        self.assertEqual(
+            (ROOT / ".gitattributes").read_bytes(),
+            b"* text=auto eol=lf\n",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repository"
+            repository.mkdir()
+            commands = (
+                ["git", "init", "-q", "-b", "main"],
+                ["git", "config", "user.name", "Fixture"],
+                ["git", "config", "user.email", "fixture@example.invalid"],
+                ["git", "config", "core.autocrlf", "true"],
+            )
+            for command in commands:
+                subprocess.run(command, cwd=repository, check=True)
+            sample = repository / "sample.txt"
+            sample.write_bytes(b"line-one\nline-two\n")
+            subprocess.run(["git", "add", "sample.txt"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "baseline"],
+                cwd=repository,
+                check=True,
+            )
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            sample.write_bytes(b"line-one\r\nline-two\r\n")
+            archived = Path(temporary) / "archived"
+            materialize_head(repository, head, archived)
+            committed = subprocess.run(
+                ["git", "show", "HEAD:sample.txt"],
+                cwd=repository,
+                capture_output=True,
+                check=True,
+            ).stdout
+            self.assertEqual(committed, b"line-one\nline-two\n")
+            self.assertEqual((archived / "sample.txt").read_bytes(), committed)
+            self.assertNotEqual(sample.read_bytes(), committed)
+
     def test_packet_verifier_rejects_data_drift(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -64,20 +104,22 @@ class QualificationTests(unittest.TestCase):
                 verify_packet(root)
 
     def test_r5k_frozen_decisions_are_valid_regression_inputs(self):
-        if not R5K.is_dir():
-            self.skipTest("R5K regression packet is not present")
-        manifest = json.loads(
-            (R5K / "EXECUTION_MANIFEST.json").read_text(encoding="utf-8")
-        )
-        known_profiles = set(manifest["model_mapping"])
-        for lane in manifest["lanes"]:
-            expected = json.loads(
-                (R5K / lane["decision_snapshot"]).read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as temporary:
+            packet = materialize_r5k_regression_packet(Path(temporary), ROOT)
+            manifest = json.loads(
+                (packet / "EXECUTION_MANIFEST.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(
-                verify_decision(expected, expected, known_profiles),
-                expected,
-            )
+            known_profiles = set(manifest["model_mapping"])
+            for lane in manifest["lanes"]:
+                expected = json.loads(
+                    (packet / lane["decision_snapshot"]).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(
+                    verify_decision(expected, expected, known_profiles),
+                    expected,
+                )
 
     def test_final_zipapp_self_test_uses_built_artifact(self):
         with tempfile.TemporaryDirectory() as temporary:

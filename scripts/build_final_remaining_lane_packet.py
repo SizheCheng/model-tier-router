@@ -12,10 +12,6 @@ from typing import Any
 
 DEFAULT_ROUTE_ID = "FINAL_REMAINING_QWEN_PRODUCT_LANE_EXECUTION_R1"
 DEFAULT_SOURCE_LANE_ID = "qwen-docx-hidden-elements-r1"
-DEFAULT_SOURCE_PACKET_RELATIVE = (
-    "runs/raw/r5k-two-product-lane-successor-campaign-3-packet-r1"
-)
-
 
 def canonical(value: Any) -> bytes:
     return (
@@ -23,6 +19,24 @@ def canonical(value: Any) -> bytes:
         + "\n"
     ).encode("utf-8")
 
+
+def _strict_json(raw: bytes) -> Any:
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-finite JSON number: {value}")
+
+    def no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, child in pairs:
+            if key in value:
+                raise ValueError(f"duplicate JSON key: {key}")
+            value[key] = child
+        return value
+
+    return json.loads(
+        raw.decode("utf-8", errors="strict"),
+        object_pairs_hook=no_duplicates,
+        parse_constant=reject_constant,
+    )
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -117,6 +131,8 @@ def build(
     lane_policy_path: Path | None = None,
     historical_input_override: dict[str, Any] | None = None,
     product_contract_bytes: bytes | None = None,
+    qualification_candidate_bytes: bytes | None = None,
+    validator_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     if (
@@ -164,6 +180,12 @@ def build(
         if not isinstance(product_contract_bytes, bytes):
             raise RuntimeError("PRODUCT_CONTRACT_INVALID")
         (frozen / "product-contract.json").write_bytes(product_contract_bytes)
+    if qualification_candidate_bytes is not None:
+        if not isinstance(qualification_candidate_bytes, bytes):
+            raise RuntimeError("QUALIFICATION_CANDIDATE_INVALID")
+        (frozen / "qualification-candidate.json").write_bytes(
+            qualification_candidate_bytes
+        )
     task_name = "task_lane_1.json"
     decision_name = "decision_lane_1.json"
     task_source = source_packet / source_binding["task_snapshot"]
@@ -207,7 +229,7 @@ def build(
     (frozen / policy_name).write_bytes(canonical(packet_policy))
     if source_state["head"] != source_binding["source_head"]:
         raise RuntimeError("SOURCE_HEAD_DRIFT")
-    lanes = [{
+    lane_binding = {
         "lane_id": lane_id,
         "ordinal": 1,
         "successor_ordinal": 1,
@@ -227,7 +249,17 @@ def build(
         "decision_snapshot": f"frozen/{decision_name}",
         "decision_sha256": sha256(frozen / decision_name),
         "timeout_seconds": source_binding["timeout_seconds"],
-    }]
+    }
+    if qualification_candidate_bytes is not None:
+        candidate_path = frozen / "qualification-candidate.json"
+        lane_binding.update({
+            "qualification_candidate_snapshot": (
+                "frozen/qualification-candidate.json"
+            ),
+            "qualification_candidate_sha256": sha256(candidate_path),
+            "validator_authority": validator_authority,
+        })
+    lanes = [lane_binding]
 
     build_artifact = subprocess.run(
         [
@@ -280,6 +312,9 @@ def build(
         "runtime_release": {
             "source_head": artifact_manifest["source_head"],
             "source_dirty": artifact_manifest["source_dirty"],
+            "source_materialization": artifact_manifest[
+                "source_materialization"
+            ],
             "artifact_path": str(artifact.resolve()),
             "artifact_sha256": sha256(artifact),
             "wrapper_path": str(wrapper.resolve()),
@@ -335,22 +370,25 @@ def _write_source_packet_from_contract(
     contract: dict[str, Any],
     router_repository: Path,
     source_repository: Path,
-) -> tuple[Path, str, Path]:
+) -> tuple[Path, str, Path, bytes, dict[str, Any]]:
     root = Path(__file__).resolve().parents[1]
     required = {
         "schema_version", "route_id", "repository_id", "branch_prefix",
         "task", "routing_request", "lane_policy", "historical_accounting",
-        "qualification_release_only",
+        "qualification_release_only", "qualification_candidate",
+        "validator_authority",
     }
     if (
         not isinstance(contract, dict)
         or set(contract) != required
-        or contract.get("schema_version") != "1.0.0"
+        or contract.get("schema_version") != "2.0.0"
         or not isinstance(contract.get("task"), dict)
         or not isinstance(contract.get("routing_request"), dict)
         or not isinstance(contract.get("lane_policy"), dict)
         or not isinstance(contract.get("historical_accounting"), dict)
         or not isinstance(contract.get("qualification_release_only"), bool)
+        or not isinstance(contract.get("qualification_candidate"), dict)
+        or not isinstance(contract.get("validator_authority"), dict)
         or not isinstance(contract.get("repository_id"), str)
         or not contract.get("repository_id")
         or not isinstance(contract.get("route_id"), str)
@@ -381,7 +419,15 @@ def _write_source_packet_from_contract(
     )
     from mtr_dogfood.external_runner import _task_payload
     from mtr_dogfood.r2_contract import validate_instance
-    from mtr_dogfood.validation import freeze_validator_plan
+    from mtr_dogfood.validation import (
+        freeze_validator_plan,
+        validate_validator_authority,
+    )
+    from mtr_dogfood.host_materialization import (
+        lane_contract,
+        load_lane_policy,
+        validate_proposed_result,
+    )
     validate_instance(
         _task_payload(task),
         json.loads((root / "schemas" / "task.schema.json").read_text(encoding="utf-8")),
@@ -392,6 +438,12 @@ def _write_source_packet_from_contract(
         != task.get("validator_plan_digest")
     ):
         raise RuntimeError("PRODUCT_CONTRACT_VALIDATOR_PLAN_INVALID")
+    try:
+        validate_validator_authority(
+            task["validator_plan"], contract["validator_authority"]
+        )
+    except ValueError as exc:
+        raise RuntimeError("PRODUCT_CONTRACT_VALIDATOR_AUTHORITY_INVALID") from exc
     model_map = load_model_map(root / "config" / "model-map.json")
     model_mapping = {}
     for profile in model_map["logical_profiles"]:
@@ -443,7 +495,22 @@ def _write_source_packet_from_contract(
     )
     policy_path = temporary / "lane-policy.json"
     policy_path.write_bytes(canonical(contract["lane_policy"]))
-    return source_packet, lane_id, policy_path
+    policy = load_lane_policy(policy_path)
+    lane = lane_contract(policy, lane_id)
+    candidate_bytes = canonical(contract["qualification_candidate"])
+    validate_proposed_result(
+        candidate_bytes,
+        lane=lane,
+        schema=json.loads(
+            (root / "schemas" / "proposed-files-result.schema.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    return (
+        source_packet, lane_id, policy_path, candidate_bytes,
+        contract["validator_authority"],
+    )
 
 
 def build_from_product_contract(
@@ -456,11 +523,17 @@ def build_from_product_contract(
 
     raw = product_contract_path.read_bytes()
     try:
-        contract = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        contract = _strict_json(raw)
+    except (UnicodeError, ValueError) as exc:
         raise RuntimeError("PRODUCT_CONTRACT_INVALID") from exc
     with tempfile.TemporaryDirectory(prefix="mtr-product-contract-") as temporary:
-        source_packet, lane_id, policy_path = _write_source_packet_from_contract(
+        (
+            source_packet,
+            lane_id,
+            policy_path,
+            qualification_candidate_bytes,
+            validator_authority,
+        ) = _write_source_packet_from_contract(
             Path(temporary),
             contract,
             router_repository,
@@ -484,9 +557,11 @@ def build_from_product_contract(
                 ),
                 "product_contract_sha256": hashlib.sha256(raw).hexdigest(),
                 "source_campaign_reused": False,
-                "input_mode": "declarative_product_contract_v1",
+                "input_mode": "declarative_product_contract_v2",
             },
             product_contract_bytes=raw,
+            qualification_candidate_bytes=qualification_candidate_bytes,
+            validator_authority=validator_authority,
         )
 
 def main(argv: list[str] | None = None) -> int:
@@ -502,9 +577,7 @@ def main(argv: list[str] | None = None) -> int:
         dest="source_repository",
         default=r"C:\Users\sizhe\Documents\qwen-redaction-standalone",
     )
-    parser.add_argument(
-        "--source-packet", default=str(root / DEFAULT_SOURCE_PACKET_RELATIVE)
-    )
+    parser.add_argument("--source-packet")
     parser.add_argument("--source-lane-id", default=DEFAULT_SOURCE_LANE_ID)
     parser.add_argument("--route-id", default=DEFAULT_ROUTE_ID)
     parser.add_argument("--branch-prefix", default="mtr-product")
@@ -523,6 +596,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         sys.stdout.buffer.write(canonical(value))
         return 0
+    if not args.source_packet:
+        raise RuntimeError("PRODUCT_CONTRACT_OR_SOURCE_PACKET_REQUIRED")
     historical_accounting = json.loads(args.historical_accounting_json)
     if not isinstance(historical_accounting, dict):
         raise RuntimeError("HISTORICAL_ACCOUNTING_INVALID")

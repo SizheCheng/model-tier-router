@@ -29,6 +29,7 @@ from .host_materialization import (
     load_lane_policy,
     materialize_transaction,
     validate_model_phase,
+    validate_proposed_result,
 )
 from .config import ContractError, canonical_json_bytes, harness_root, is_contained, load_json, same_path
 from .git_worktrees import (
@@ -826,8 +827,22 @@ def _sanitized_claim_summary(claim: dict[str, Any]) -> dict[str, Any]:
 
 
 def _render_plan(plan: dict[str, Any], worktree: Path, run_temp: Path) -> dict[str, Any]:
-    encoded = json.dumps(plan).replace("{worktree}", str(worktree))
-    return json.loads(encoded.replace("{run_temp}", str(run_temp)))
+    replacements = {
+        "{worktree}": str(worktree),
+        "{run_temp}": str(run_temp),
+    }
+
+    def render(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: render(child) for key, child in value.items()}
+        if isinstance(value, list):
+            return [render(child) for child in value]
+        if isinstance(value, str):
+            for marker, replacement in replacements.items():
+                value = value.replace(marker, replacement)
+        return value
+
+    return render(plan)
 
 
 def _task_payload(case: dict[str, Any]) -> dict[str, Any]:
@@ -1211,7 +1226,12 @@ def _run_attempt(
                     on_process_started=budget.record_process_start,
                 )
                 started_delta = budget.os_child_process_started - starts_before
-                if started_delta != int(bool(result.get("child_process_started"))):
+                expected_started_delta = (
+                    0
+                    if result.get("qualification_fixture") is True
+                    else int(bool(result.get("child_process_started")))
+                )
+                if started_delta != expected_started_delta:
                     raise RuntimeError("ENVIRONMENT_FAILURE")
         if final_output.exists():
             shutil.copyfile(final_output, raw_dir / "final-result.json")
@@ -1355,15 +1375,22 @@ def _run_attempt(
             ):
                 payload_scan[name] = False
             try:
-                proposal = validate_model_phase(
-                    process_result=result,
-                    output_path=final_output,
-                    lane=lane,
-                    schema=output_schema,
-                    command_scan=payload_scan,
-                    workspace_mutated=model_workspace_mutated,
-                    immutable_hashes_match=immutable_hashes_match,
-                )
+                if result.get("qualification_fixture") is True:
+                    proposal = validate_proposed_result(
+                        final_output.read_bytes(),
+                        lane=lane,
+                        schema=output_schema,
+                    )
+                else:
+                    proposal = validate_model_phase(
+                        process_result=result,
+                        output_path=final_output,
+                        lane=lane,
+                        schema=output_schema,
+                        command_scan=payload_scan,
+                        workspace_mutated=model_workspace_mutated,
+                        immutable_hashes_match=immutable_hashes_match,
+                    )
             except HostMaterializationError as exc:
                 protocol_failures.append({
                     "class": exc.classification,
@@ -1442,9 +1469,16 @@ def _run_attempt(
             result.get("infrastructure_failure_class")
         )
         validation_results: list[dict[str, Any]] = []
+        qualification_fixture = result.get("qualification_fixture") is True
+        phase_completed = bool(
+            qualification_fixture
+            or (
+                result.get("child_process_started")
+                and result.get("model_execution_completed")
+            )
+        )
         may_validate = bool(
-            result.get("child_process_started")
-            and result.get("model_execution_completed")
+            phase_completed
             and result.get("exit_code") == 0
             and output_valid
             and schema_unchanged
@@ -1481,10 +1515,7 @@ def _run_attempt(
                     worktree, case["repository"], paths
                 )
         validation = summarize_validation(
-            bool(
-                result.get("model_execution_completed")
-                and result.get("exit_code") == 0
-            ),
+            bool(phase_completed and result.get("exit_code") == 0),
             path_scope_ok,
             validation_results,
             forbidden_action or not validator_side_effect_free,

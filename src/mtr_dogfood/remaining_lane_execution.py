@@ -22,6 +22,7 @@ from .process_ancestry import verify_standalone_powershell, windows_process_prov
 from .qualification import ASSETS, _resource_bytes, verify_packet
 from .router_adapter import assess_live, verify_decision
 from .runtime_contract import ProcessAccounting
+from .validation import validate_validator_authority
 
 
 COMPONENT_ID = "MTR_GENERIC_SINGLE_PRODUCT_EXECUTION"
@@ -94,7 +95,9 @@ def _repository_state(repository: Path) -> dict[str, Any]:
     }
 
 
-def _clone_repository(source: Path, target: Path, head: str) -> Path:
+def _clone_repository(
+    source: Path, target: Path, head: str, branch: str,
+) -> Path:
     completed = subprocess.run(
         [
             "git",
@@ -115,7 +118,7 @@ def _clone_repository(source: Path, target: Path, head: str) -> Path:
         raise FinalExecutionError(
             completed.stderr.strip() or "QUALIFICATION_CLONE_FAILED"
         )
-    _git(target, "checkout", "--quiet", "--detach", head)
+    _git(target, "checkout", "--quiet", "-B", branch, head)
     _git(target, "remote", "remove", "origin")
     _git(target, "config", "core.longpaths", "true")
     if _git(target, "rev-parse", "HEAD") != head:
@@ -367,10 +370,17 @@ def _validate_manifest(
     if (
         release.get("source_head") != embedded_release.get("source_head")
         or release.get("source_dirty") is not embedded_release.get("source_dirty")
+        or release.get("source_materialization")
+        != embedded_release.get("source_materialization")
         or release.get("artifact_sha256") != _sha256(artifact)
         or not same_path(release.get("artifact_path", ""), artifact)
         or embedded_release.get("entrypoint") not in {"remaining-lane", "product-lane"}
         or (not qualification_only and embedded_release.get("source_dirty") is not False)
+        or (
+            not qualification_only
+            and embedded_release.get("source_materialization")
+            != "git_object_database_head"
+        )
     ):
         raise FinalExecutionError("FINAL_EXECUTION_ARTIFACT_BINDING_DRIFT")
     for lane in lanes:
@@ -385,6 +395,27 @@ def _validate_manifest(
             digest_field = field.replace("snapshot", "sha256")
             if not path.is_file() or _sha256(path) != lane.get(digest_field):
                 raise FinalExecutionError("FROZEN_INPUT_HASH_DRIFT")
+        candidate_snapshot = lane.get("qualification_candidate_snapshot")
+        candidate_digest = lane.get("qualification_candidate_sha256")
+        if not isinstance(candidate_snapshot, str) or not isinstance(
+            candidate_digest, str
+        ):
+            raise FinalExecutionError("QUALIFICATION_CANDIDATE_REQUIRED")
+        candidate_path = _packet_file(packet, candidate_snapshot)
+        if (
+            not candidate_path.is_file()
+            or _sha256(candidate_path) != candidate_digest
+        ):
+            raise FinalExecutionError("QUALIFICATION_CANDIDATE_HASH_DRIFT")
+        task = load_json(_packet_file(packet, lane["task_snapshot"]))
+        try:
+            validate_validator_authority(
+                task["validator_plan"], lane.get("validator_authority")
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FinalExecutionError(
+                "QUALIFICATION_VALIDATOR_AUTHORITY_INVALID"
+            ) from exc
     policy_binding = manifest["lane_policy"]
     policy_path = _packet_file(packet, policy_binding.get("snapshot"))
     if (
@@ -397,6 +428,34 @@ def _validate_manifest(
         raise FinalExecutionError("FROZEN_LANE_POLICY_BINDING_DRIFT")
     host_lane_contract(policy, lane_ids[0])
 
+
+def _verify_reservation_inputs(
+    packet: Path,
+    manifest: dict[str, Any],
+    actual_repositories: dict[str, Path],
+    binding: dict[str, Any],
+) -> None:
+    verify_packet(packet)
+    if load_json(packet / "FINAL_EXECUTION_MANIFEST.json") != manifest:
+        raise FinalExecutionError("PRE_RESERVATION_MANIFEST_DRIFT")
+    expected_repositories = {
+        "model-tier-router": {
+            "head": manifest["router_source_head"],
+            "branch": "main",
+        },
+        binding["repository_id"]: {
+            "head": binding["source_head"],
+            "branch": binding["source_branch"],
+        },
+    }
+    for identity, expected_state in expected_repositories.items():
+        actual_state = _repository_state(actual_repositories[identity])
+        if (
+            actual_state["head"] != expected_state["head"]
+            or actual_state["branch"] != expected_state["branch"]
+            or actual_state["status"]
+        ):
+            raise FinalExecutionError("PRE_RESERVATION_REPOSITORY_DRIFT")
 
 def _run_lanes(
     *,
@@ -414,6 +473,12 @@ def _run_lanes(
     binding = manifest["lanes"][0]
     lane_id = binding["lane_id"]
     repository_id = binding["repository_id"]
+    qualification_candidate = (
+        _packet_file(packet, binding["qualification_candidate_snapshot"])
+        if qualification_only
+        and binding.get("qualification_candidate_snapshot") is not None
+        else None
+    )
     ledger = CampaignLedger(
         result_root / "campaign-ledger.json",
         qualification_only=qualification_only,
@@ -494,11 +559,43 @@ def _run_lanes(
         def reserved_launcher(**kwargs: Any) -> dict[str, Any]:
             nonlocal reserved
             if packet_latch is not None:
+                _verify_reservation_inputs(
+                    packet, manifest, actual_repositories, binding
+                )
                 packet_latch.reserve(lane_id)
             ledger.reserve(lane_id)
             reserved = True
             if qualification_only:
-                raise ReservationBoundaryReached(lane_id)
+                if qualification_candidate is None:
+                    raise ReservationBoundaryReached(lane_id)
+                command = kwargs["command"]
+                output_flag = command.index("--output-last-message")
+                output = Path(command[output_flag + 1])
+                output.write_bytes(qualification_candidate.read_bytes())
+                raw = Path(kwargs["raw_directory"])
+                raw.mkdir(parents=True, exist_ok=True)
+                (raw / "codex-events.jsonl").write_text(
+                    "", encoding="utf-8", newline=""
+                )
+                return {
+                    "qualification_fixture": True,
+                    "exit_code": 0,
+                    "wall_time_seconds": 0.0,
+                    "child_process_started": False,
+                    "model_execution_observed": False,
+                    "model_execution_completed": False,
+                    "timed_out": False,
+                    "host_policy_failure_count": 0,
+                    "infrastructure_failure_class": None,
+                    "rate_limit_event_count": 0,
+                    "model_unavailable_event_count": 0,
+                    "authentication_event_count": 0,
+                    "output_schema_error_count": 0,
+                    "input_tokens": None,
+                    "cached_input_tokens": None,
+                    "output_tokens": None,
+                    "reasoning_output_tokens": None,
+                }
             return launcher(**kwargs)
 
         try:
@@ -568,6 +665,14 @@ def _run_lanes(
             )
             break
 
+        if qualification_only:
+            outcome["qualification_state"] = (
+                "POST_MATERIALIZATION_VALIDATED"
+                if outcome.get("accepted")
+                else "POST_MATERIALIZATION_FAILED"
+            )
+            outcome["real_model_process_starts"] = 0
+            outcome["real_model_requests"] = 0
         process_started = bool(outcome.get("child_process_started"))
         accepted = bool(outcome.get("accepted"))
         terminal_status = str(outcome.get("failure_class") or "accepted")
@@ -592,7 +697,8 @@ def _run_lanes(
         qualification_only
         and len(outcomes) == 1
         and all(
-            item.get("qualification_state") == "START_RESERVATION_REQUESTED"
+            item.get("qualification_state")
+            == "POST_MATERIALIZATION_VALIDATED"
             for item in outcomes
         )
     )
@@ -683,6 +789,7 @@ def run(
                     source,
                     clone_root / "source-repository",
                     binding["source_head"],
+                    binding["source_branch"],
                 ),
             }
             closeout = _run_lanes(
@@ -697,7 +804,62 @@ def run(
                 launcher=launcher,
             )
     else:
+        if binding.get("qualification_candidate_snapshot") is None:
+            raise FinalExecutionError(
+                "QUALIFICATION_CANDIDATE_REQUIRED_FOR_REAL_EXECUTION"
+            )
+        with tempfile.TemporaryDirectory(
+            prefix="final-remaining-pre-reservation-",
+            dir=workspace,
+        ) as temporary:
+            clone_root = Path(temporary)
+            preflight_repositories = {
+                "model-tier-router": router,
+                repository_id: _clone_repository(
+                    source,
+                    clone_root / "source-repository",
+                    binding["source_head"],
+                    binding["source_branch"],
+                ),
+            }
+            preflight = _run_lanes(
+                packet=packet,
+                manifest=manifest,
+                actual_repositories=actual_repositories,
+                execution_repositories=preflight_repositories,
+                workspace_parent=clone_root / "workspaces",
+                result_root=result / "pre-reservation-qualification",
+                runner_pid=0,
+                qualification_only=True,
+                launcher=launcher,
+            )
+        if (
+            preflight.get("status") != "passed"
+            or preflight.get("starts_consumed") != 0
+            or preflight.get("campaign_started") is not False
+            or preflight.get("process_accounting", {}).get(
+                "os_child_process_started"
+            ) != 0
+            or preflight.get("process_accounting", {}).get(
+                "model_execution_observed"
+            ) != 0
+        ):
+            raise FinalExecutionError(
+                "PRE_RESERVATION_CANDIDATE_QUALIFICATION_FAILED"
+            )
+        _verify_reservation_inputs(
+            packet, manifest, actual_repositories, binding
+        )
+        _validate_manifest(
+            packet,
+            manifest,
+            artifact,
+            router,
+            source,
+            qualification_only=False,
+        )
         closeout = _run_lanes(
+
             packet=packet,
             manifest=manifest,
             actual_repositories=actual_repositories,
@@ -708,6 +870,21 @@ def run(
             qualification_only=False,
             launcher=launcher,
         )
+        closeout["pre_reservation_qualification"] = {
+            "status": preflight["status"],
+            "qualification_state": preflight["outcomes"][0].get(
+                "qualification_state"
+            ),
+            "model_process_starts": preflight["process_accounting"].get(
+                "os_child_process_started"
+            ),
+            "model_requests": 0,
+            "validator_process_starts": len(
+                preflight["outcomes"][0]
+                .get("validation", {})
+                .get("validator_results", [])
+            ),
+        }
 
     after = {
         lane_id: _repository_state(path)

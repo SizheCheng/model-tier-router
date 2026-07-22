@@ -3,16 +3,93 @@
   "title": "Generic product lane contract",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "route_id", "repository_id", "branch_prefix", "task", "routing_request", "lane_policy", "historical_accounting", "qualification_release_only"],
+  "required": [
+    "schema_version",
+    "route_id",
+    "repository_id",
+    "branch_prefix",
+    "task",
+    "routing_request",
+    "lane_policy",
+    "historical_accounting",
+    "qualification_release_only",
+    "validator_authority",
+    "qualification_candidate"
+  ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "route_id": {"type": "string", "pattern": "^[A-Z0-9_-]+$", "minLength": 1},
-    "repository_id": {"type": "string", "minLength": 1},
-    "branch_prefix": {"type": "string", "minLength": 1},
-    "task": {"type": "object"},
-    "routing_request": {"type": "object"},
-    "lane_policy": {"type": "object"},
-    "historical_accounting": {"type": "object"},
-    "qualification_release_only": {"type": "boolean"}
+    "schema_version": {
+      "const": "2.0.0"
+    },
+    "route_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_-]+$",
+      "minLength": 1
+    },
+    "repository_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "branch_prefix": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task": {
+      "type": "object"
+    },
+    "routing_request": {
+      "type": "object"
+    },
+    "lane_policy": {
+      "type": "object"
+    },
+    "historical_accounting": {
+      "type": "object"
+    },
+    "qualification_release_only": {
+      "type": "boolean"
+    },
+    "validator_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_model",
+        "repository_test_code_trusted",
+        "environment_scrubbed",
+        "os_sandbox_enforced",
+        "shell_commands_allowed",
+        "inline_code_allowed",
+        "network_access_authorized",
+        "external_path_access_authorized"
+      ],
+      "properties": {
+        "execution_model": {
+          "const": "trusted_repository_test_process_v1"
+        },
+        "repository_test_code_trusted": {
+          "const": true
+        },
+        "environment_scrubbed": {
+          "const": true
+        },
+        "os_sandbox_enforced": {
+          "const": false
+        },
+        "shell_commands_allowed": {
+          "const": false
+        },
+        "inline_code_allowed": {
+          "const": false
+        },
+        "network_access_authorized": {
+          "const": false
+        },
+        "external_path_access_authorized": {
+          "const": false
+        }
+      }
+    },
+    "qualification_candidate": {
+      "$ref": "proposed-files-result.schema.json"
+    }
   }
 }

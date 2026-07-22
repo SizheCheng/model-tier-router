@@ -9,7 +9,7 @@ import sys
 import tempfile
 import zipfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 ASSETS = {
@@ -93,6 +93,88 @@ def create_deterministic_zipapp(source: Path, target: Path) -> None:
             info.external_attr = 0o100644 << 16
             archive.writestr(info, path.read_bytes())
 
+def materialize_head(root: Path, head: str, target: Path) -> Path:
+    listing = subprocess.run(
+        ["git", "-C", str(root), "ls-tree", "-rz", "--full-tree", head],
+        capture_output=True,
+        check=False,
+    )
+    if listing.returncode != 0:
+        raise RuntimeError(
+            listing.stderr.decode("utf-8", "replace").strip()
+            or "SOURCE_HEAD_TREE_FAILED"
+        )
+    entries: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw_entry in listing.stdout.split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, separator, raw_name = raw_entry.partition(b"\t")
+        fields = metadata.decode("ascii", "strict").split()
+        try:
+            relative = raw_name.decode("utf-8", "strict")
+        except UnicodeError as exc:
+            raise RuntimeError("SOURCE_HEAD_PATH_INVALID") from exc
+        path = PurePosixPath(relative)
+        if (
+            separator != b"\t"
+            or len(fields) != 3
+            or fields[1] != "blob"
+            or fields[0] not in {"100644", "100755"}
+            or path.is_absolute()
+            or not path.parts
+            or ".." in path.parts
+            or ".git" in path.parts
+            or "\\" in relative
+            or ":" in relative
+            or relative in seen
+        ):
+            raise RuntimeError("SOURCE_HEAD_TREE_UNSAFE")
+        seen.add(relative)
+        entries.append((relative, fields[2]))
+    if not entries:
+        raise RuntimeError("SOURCE_HEAD_TREE_EMPTY")
+    objects = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "--batch"],
+        input="".join(f"{object_id}\n" for _, object_id in entries).encode(
+            "ascii"
+        ),
+        capture_output=True,
+        check=False,
+    )
+    if objects.returncode != 0:
+        raise RuntimeError(
+            objects.stderr.decode("utf-8", "replace").strip()
+            or "SOURCE_HEAD_OBJECT_READ_FAILED"
+        )
+    cursor = 0
+    payloads: list[bytes] = []
+    for _, expected_object_id in entries:
+        line_end = objects.stdout.find(b"\n", cursor)
+        if line_end < 0:
+            raise RuntimeError("SOURCE_HEAD_OBJECT_STREAM_INVALID")
+        header = objects.stdout[cursor:line_end].decode("ascii", "strict").split()
+        if (
+            len(header) != 3
+            or header[0] != expected_object_id
+            or header[1] != "blob"
+        ):
+            raise RuntimeError("SOURCE_HEAD_OBJECT_STREAM_INVALID")
+        size = int(header[2])
+        start = line_end + 1
+        finish = start + size
+        if finish >= len(objects.stdout) or objects.stdout[finish:finish + 1] != b"\n":
+            raise RuntimeError("SOURCE_HEAD_OBJECT_STREAM_INVALID")
+        payloads.append(objects.stdout[start:finish])
+        cursor = finish + 1
+    if cursor != len(objects.stdout):
+        raise RuntimeError("SOURCE_HEAD_OBJECT_STREAM_INVALID")
+    target.mkdir(parents=True, exist_ok=False)
+    for (relative, _), payload in zip(entries, payloads, strict=True):
+        destination = target.joinpath(*PurePosixPath(relative).parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+    return target
 
 def build(
     output_directory: Path,
@@ -130,14 +212,20 @@ def build(
     except KeyError as exc:
         raise RuntimeError("UNKNOWN_ARTIFACT_ENTRYPOINT") from exc
     artifact = output_directory / artifact_name
-    wrapper_source = root / wrapper_name
-    wrapper = output_directory / wrapper_source.name
+    wrapper = output_directory / Path(wrapper_name).name
 
     with tempfile.TemporaryDirectory(prefix="mtr-qualification-build-") as temporary:
-        stage = Path(temporary)
+        temporary_root = Path(temporary)
+        source_root = (
+            root
+            if dirty_source
+            else materialize_head(root, source_head, temporary_root / "source-head")
+        )
+        stage = temporary_root / "stage"
+        stage.mkdir()
         package = stage / "mtr_dogfood"
         shutil.copytree(
-            root / "src" / "mtr_dogfood",
+            source_root / "src" / "mtr_dogfood",
             package,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
@@ -147,6 +235,11 @@ def build(
                     "schema_version": "1.0.0",
                     "source_head": source_head,
                     "source_dirty": bool(dirty_source),
+                    "source_materialization": (
+                        "dirty_worktree_candidate"
+                        if dirty_source
+                        else "git_object_database_head"
+                    ),
                     "entrypoint": entrypoint,
                 }
             )
@@ -154,7 +247,7 @@ def build(
         assets = package / "_qualification_assets"
         assets.mkdir()
         for name, relative in ASSETS.items():
-            shutil.copyfile(root / relative, assets / name)
+            shutil.copyfile(source_root / relative, assets / name)
 
         (stage / "__main__.py").write_text(
             f"from mtr_dogfood.{module} import main\n"
@@ -164,13 +257,14 @@ def build(
         )
         create_deterministic_zipapp(stage, artifact)
 
-    wrapper_raw = wrapper_source.read_bytes()
-    if bare_cr_count(wrapper_raw):
-        raise RuntimeError("POWERSHELL_WRAPPER_BARE_CR")
-    ast_errors = powershell_ast_errors(wrapper_source)
-    if ast_errors:
-        raise RuntimeError(f"POWERSHELL_WRAPPER_AST_INVALID: {ast_errors}")
-    shutil.copyfile(wrapper_source, wrapper)
+        wrapper_source = source_root / wrapper_name
+        wrapper_raw = wrapper_source.read_bytes()
+        if bare_cr_count(wrapper_raw):
+            raise RuntimeError("POWERSHELL_WRAPPER_BARE_CR")
+        ast_errors = powershell_ast_errors(wrapper_source)
+        if ast_errors:
+            raise RuntimeError(f"POWERSHELL_WRAPPER_AST_INVALID: {ast_errors}")
+        shutil.copyfile(wrapper_source, wrapper)
 
     self_test = subprocess.run(
         [sys.executable, "-B", str(artifact), "--self-test"],
@@ -193,6 +287,9 @@ def build(
         "built_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "source_head": source_head,
         "source_dirty": bool(dirty_source),
+        "source_materialization": (
+            "dirty_worktree_candidate" if dirty_source else "git_object_database_head"
+        ),
         "artifact": {
             "path": str(artifact.resolve()),
             "bytes": artifact.stat().st_size,
