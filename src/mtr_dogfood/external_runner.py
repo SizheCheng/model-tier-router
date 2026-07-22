@@ -865,10 +865,10 @@ writer, PowerShell or Python writes, shell redirection, directory creation,
 deletion, moves, or any Git mutation. Return proposed UTF-8 file contents only
 through the structured final result. Refer to targets only by the exact aliases
 above. Do not put a filesystem path or changed_paths field in the final result.
-For every proposed file, declare its media type, encoding, representation, and
-line endings. The parent computes UTF-8 byte counts and SHA-256 digests from the
-validated content; do not return either integrity field. Declare the parent
-validations that
+For every proposed file, return only its exact target alias and UTF-8 content.
+The parent supplies representation, encoding, media type, line endings, byte
+count, and SHA-256 from the frozen lane policy and validated content; do not
+return those host-owned fields. Declare the parent validations that
 must pass. Incomplete, malformed, truncated, missing, extra, or oversized output
 will fail closed and will materialize no file. The parent alone validates all
 payloads and then invokes the trusted writer transactionally. Do not return a

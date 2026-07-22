@@ -19,24 +19,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "target_alias",
-          "representation",
-          "encoding",
-          "content",
-          "line_endings",
-          "media_type"
-        ],
+        "required": ["target_alias", "content"],
         "properties": {
           "target_alias": {"type": "string"},
-          "representation": {"type": "string", "enum": ["utf8_text"]},
-          "encoding": {"type": "string", "enum": ["UTF-8"]},
-          "content": {"type": "string"},
-          "line_endings": {"type": "string", "enum": ["LF", "CRLF"]},
-          "media_type": {
-            "type": "string",
-            "enum": ["text/plain", "text/markdown", "text/x-python"]
-          }
+          "content": {"type": "string"}
         }
       }
     },

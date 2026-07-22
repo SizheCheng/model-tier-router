@@ -537,14 +537,7 @@ class TemporaryGitPolicyTests(unittest.TestCase):
                 proposed = []
                 for alias, content in contents.items():
                     payload = content.encode("utf-8")
-                    proposed.append({
-                        "target_alias": alias,
-                        "representation": "utf8_text",
-                        "encoding": "UTF-8",
-                        "content": content,
-                        "line_endings": "LF",
-                        "media_type": media[alias],
-                    })
+                    proposed.append({"target_alias": alias, "content": content})
                 output.write_text(json.dumps({
                     "schema_version": "1.0.0",
                     "status": "completed",

@@ -143,9 +143,8 @@ WORKSPACE_WRITE_OK followed by one newline for target alias smoke_result.
 Do not put {result_path} or any other filesystem path in the final result. Do
 not invoke file_change, apply_patch, a bounded writer, PowerShell or Python
 writes, shell redirection, or Git mutation. The model workspace is read-only.
-Return only the strict proposed-file result with alias, representation, UTF-8
-content, LF declaration, text/plain media type, and
-a required exact-byte validation expectation. The parent validates the whole
+Return only the strict proposed-file result with alias, UTF-8 content, and a
+required exact-byte validation expectation. The parent supplies all file metadata. The parent validates the whole
 result before transactionally materializing any file. Do not read outside this
 repository or use network tools, web search, credentials, apps, plugins, or
 subagents.

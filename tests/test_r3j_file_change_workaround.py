@@ -549,13 +549,7 @@ class BoundedTransportIntegrationTests(unittest.TestCase):
                     alias = ALIAS_BY_PATH[target]
                     proposed.append({
                         "target_alias": alias,
-                        "representation": "utf8_text",
-                        "encoding": "UTF-8",
                         "content": content.decode("utf-8"),
-                        "line_endings": "LF",
-                        "media_type": (
-                            "text/markdown" if target.endswith(".md") else "text/x-python"
-                        ),
                     })
                 output = Path(
                     kwargs["command"][

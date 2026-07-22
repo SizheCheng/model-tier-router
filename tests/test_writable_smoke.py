@@ -178,11 +178,7 @@ class WritableSmokeTests(unittest.TestCase):
                     "notes": [],
                     "proposed_files": [{
                         "target_alias": "smoke_result",
-                        "representation": "utf8_text",
-                        "encoding": "UTF-8",
                         "content": content,
-                        "line_endings": "LF",
-                        "media_type": "text/plain",
                     }],
                     "validation_expectations": [{
                         "name": "exact bytes",

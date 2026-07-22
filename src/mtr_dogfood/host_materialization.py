@@ -340,13 +340,15 @@ def alias_map(lane: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _line_endings_match(content: str, declared: str) -> bool:
-    if declared == "LF":
-        return "\r" not in content
-    if declared == "CRLF":
-        without_pairs = content.replace("\r\n", "")
-        return "\r" not in without_pairs and "\n" not in without_pairs
-    return False
+def _detect_line_endings(content: str) -> str:
+    if "\r" not in content:
+        return "LF"
+    without_pairs = content.replace("\r\n", "")
+    if "\r" in without_pairs or "\n" in without_pairs:
+        raise HostMaterializationError(
+            "PROPOSED_FILE_ENCODING_INVALID", "mixed or lone line ending"
+        )
+    return "CRLF"
 
 
 def validate_proposed_result(
@@ -412,22 +414,6 @@ def validate_proposed_result(
     for alias_policy in lane["aliases"]:
         name = alias_policy["target_alias"]
         record = by_name[name]
-        if record["representation"] != "utf8_text":
-            raise HostMaterializationError(
-                "MODEL_OUTPUT_SCHEMA_INVALID", f"unsupported representation for {name}"
-            )
-        if record["encoding"] != alias_policy["encoding"]:
-            raise HostMaterializationError(
-                "PROPOSED_FILE_ENCODING_INVALID", f"encoding mismatch for {name}"
-            )
-        if record["media_type"] != alias_policy["media_type"]:
-            raise HostMaterializationError(
-                "MODEL_OUTPUT_SCHEMA_INVALID", f"media type mismatch for {name}"
-            )
-        if record["line_endings"] not in alias_policy["allowed_line_endings"]:
-            raise HostMaterializationError(
-                "PROPOSED_FILE_ENCODING_INVALID", f"line ending is not allowed for {name}"
-            )
         content_text = record["content"]
         try:
             content = content_text.encode("utf-8", errors="strict")
@@ -439,9 +425,10 @@ def validate_proposed_result(
             raise HostMaterializationError(
                 "PROPOSED_FILE_ENCODING_INVALID", f"embedded NUL for {name}"
             )
-        if not _line_endings_match(content_text, record["line_endings"]):
+        line_endings = _detect_line_endings(content_text)
+        if line_endings not in alias_policy["allowed_line_endings"]:
             raise HostMaterializationError(
-                "PROPOSED_FILE_ENCODING_INVALID", f"line ending declaration mismatch for {name}"
+                "PROPOSED_FILE_ENCODING_INVALID", f"line ending is not allowed for {name}"
             )
         exact = alias_policy["exact_content_bytes"]
         if (
@@ -468,7 +455,7 @@ def validate_proposed_result(
             relative_path=alias_policy["relative_path"],
             media_type=alias_policy["media_type"],
             encoding=alias_policy["encoding"],
-            line_endings=record["line_endings"],
+            line_endings=line_endings,
             content=content,
             sha256=digest,
         ))
@@ -511,11 +498,15 @@ def validate_proposed_result(
     host_result["lane_id"] = lane["lane_id"]
     host_result["proposed_files"] = [
         {
-            **record,
+            **by_name[file.target_alias],
+            "representation": "utf8_text",
+            "encoding": file.encoding,
+            "line_endings": file.line_endings,
+            "media_type": file.media_type,
             "utf8_byte_count": len(file.content),
             "sha256": file.sha256,
         }
-        for record, file in zip(value["proposed_files"], prepared, strict=True)
+        for file in prepared
     ]
     return ValidatedProposal(
         lane_id=lane["lane_id"],

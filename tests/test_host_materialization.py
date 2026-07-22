@@ -86,14 +86,7 @@ def result_value(
         text = contents[alias]
         if line_endings == "CRLF":
             text = text.replace("\r\n", "\n").replace("\n", "\r\n")
-        proposed.append({
-            "target_alias": alias,
-            "representation": "utf8_text",
-            "encoding": "UTF-8",
-            "content": text,
-            "line_endings": line_endings,
-            "media_type": policy["media_type"],
-        })
+        proposed.append({"target_alias": alias, "content": text})
     return {
         "schema_version": "1.0.0",
         "status": status,
@@ -185,7 +178,7 @@ class ProposedFileProtocolTests(unittest.TestCase):
             "aliases": [{
                 "target_alias": "inventory_test",
                 "relative_path": "tests/test_inventory.py",
-                "media_type": "text/x-python",
+                "media_type": "application/json",
                 "encoding": "UTF-8",
                 "allowed_line_endings": ["LF"],
                 "exact_content_bytes": None,
@@ -220,13 +213,17 @@ class ProposedFileProtocolTests(unittest.TestCase):
             raw_result(result_value(lane, good)), lane=lane, schema=self.schema
         )
         self.assertEqual(proposal.lane_id, "inventory-api-product-r1")
+        self.assertEqual(
+            proposal.result["proposed_files"][0]["media_type"], "application/json"
+        )
         bad = {"inventory_test": "import unittest\n# no required domain token\n"}
         self.assert_classification(
             "LANE_VALIDATION_FAILED",
             raw_result(result_value(lane, bad)),
             lane,
         )
-    def test_crlf_is_preserved_when_declared(self):
+
+    def test_crlf_is_preserved_when_derived(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
         proposal = validate_proposed_result(
             raw_result(result_value(lane, line_endings="CRLF")),
@@ -247,16 +244,17 @@ class ProposedFileProtocolTests(unittest.TestCase):
             lane,
         )
 
-    def test_schema_path_representation_encoding_media_and_tests_rejections(self):
+    def test_host_owned_metadata_paths_and_tests_rejections(self):
         lane = lane_contract(self.policy, "writable_smoke")
         mutations = []
-        value = result_value(lane)
-        value["proposed_files"][0]["relative_path"] = "smoke/result.txt"
-        mutations.append(value)
         for field, bad in (
-            ("representation", "base64"),
-            ("encoding", "UTF-16"),
-            ("media_type", "application/octet-stream"),
+            ("relative_path", "smoke/result.txt"),
+            ("representation", "utf8_text"),
+            ("encoding", "UTF-8"),
+            ("media_type", "text/plain"),
+            ("line_endings", "LF"),
+            ("utf8_byte_count", 19),
+            ("sha256", "0" * 64),
         ):
             value = result_value(lane)
             value["proposed_files"][0][field] = bad
@@ -299,24 +297,18 @@ class ProposedFileProtocolTests(unittest.TestCase):
             "MODEL_OUTPUT_SCHEMA_INVALID", raw_result(model_owned_lane), lane
         )
 
-    def test_nul_line_endings_and_model_owned_integrity_rejections(self):
+    def test_nul_and_mixed_line_endings_are_rejected(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
-        cases = []
         nul = result_value(lane)
         nul["proposed_files"][0]["content"] += "\x00"
-        cases.append(("PROPOSED_FILE_ENCODING_INVALID", nul))
-        endings = result_value(lane)
-        endings["proposed_files"][0]["line_endings"] = "CRLF"
-        cases.append(("PROPOSED_FILE_ENCODING_INVALID", endings))
-        count = result_value(lane)
-        count["proposed_files"][0]["utf8_byte_count"] = 1
-        cases.append(("MODEL_OUTPUT_SCHEMA_INVALID", count))
-        digest = result_value(lane)
-        digest["proposed_files"][0]["sha256"] = "0" * 64
-        cases.append(("MODEL_OUTPUT_SCHEMA_INVALID", digest))
-        for expected, value in cases:
-            with self.subTest(expected=expected):
-                self.assert_classification(expected, raw_result(value), lane)
+        self.assert_classification(
+            "PROPOSED_FILE_ENCODING_INVALID", raw_result(nul), lane
+        )
+        mixed = result_value(lane)
+        mixed["proposed_files"][0]["content"] += "mixed\r\nline\n"
+        self.assert_classification(
+            "PROPOSED_FILE_ENCODING_INVALID", raw_result(mixed), lane
+        )
 
     def test_per_alias_aggregate_and_serialized_limits(self):
         lane = lane_contract(self.policy, "mtr-docs-private-executor-r1")
