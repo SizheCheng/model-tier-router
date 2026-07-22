@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Zero-model product release qualification matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_id", "products"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "release_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_-]+$",
+      "minLength": 1
+    },
+    "products": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "packet_name",
+          "product_contract",
+          "source_repository"
+        ],
+        "properties": {
+          "packet_name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "product_contract": {"type": "string", "minLength": 1},
+          "source_repository": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

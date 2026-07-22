@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0.0",
+  "release_id": "EXAMPLE_PRODUCT_RELEASE_R1",
+  "products": [
+    {
+      "packet_name": "python-product",
+      "product_contract": "contracts/python-product.json",
+      "source_repository": "repositories/python-product"
+    },
+    {
+      "packet_name": "typescript-product",
+      "product_contract": "contracts/typescript-product.json",
+      "source_repository": "repositories/typescript-product"
+    },
+    {
+      "packet_name": "documentation-product",
+      "product_contract": "contracts/documentation-product.json",
+      "source_repository": "repositories/documentation-product"
+    }
+  ]
+}

@@ -71,6 +71,7 @@ real canaries on one runtime release must then pass the readiness evaluator befo
 default product-development use.
 
 ```powershell
+python -B scripts/run_product_release_matrix.py --matrix <matrix.json> --router-repository <router> --release-root <release>
 python -B scripts/evaluate_product_release.py --packet-root <qualification-packet> ...
 python -B scripts/evaluate_product_readiness.py --packet-root <real-canary-packet> ...
 ```
