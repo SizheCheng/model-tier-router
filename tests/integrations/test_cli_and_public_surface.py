@@ -162,7 +162,7 @@ class PublicSurfaceTests(unittest.TestCase):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         for required in (
             'build-backend = "setuptools.build_meta"',
-            'version = "0.1.0"',
+            'version = "0.2.0"',
             'dependencies = []',
             'model-tier-router = "model_tier_router.cli:main"',
             'license = "Apache-2.0"',

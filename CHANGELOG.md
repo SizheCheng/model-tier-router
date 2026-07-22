@@ -2,6 +2,15 @@
 
 All notable changes use Semantic Versioning.
 
+## 0.2.0 - Managed Codex data integration
+
+- Added an optional local Codex lifecycle collector with bounded redaction,
+  per-record integrity binding, status, and explicit export.
+- Added deterministic managed-hook bundle generation from a clean committed
+  repository without automatic installation or deployment.
+- Added public schemas, documentation, and regression tests for the integration.
+- Preserved advisory-only routing and zero model/network behavior.
+
 ## 0.1.0 - Release candidate
 
 - Added the advisory-first `assess` API.

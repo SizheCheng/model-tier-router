@@ -156,6 +156,15 @@ An explicit-only integration is available at
 returns one advisory decision. It never invokes itself implicitly or promotes
 an assessment into execution authority.
 
+### Managed development-data collection
+
+An optional managed lifecycle collector is documented in
+[`docs/codex-development-data.md`](docs/codex-development-data.md). It records
+bounded, locally redacted route, tool, approval, compaction, subagent, and
+outcome receipts for supported Codex hooks. The deterministic builder prepares
+but does not install system configuration, start a model, contact a network, or
+change Router's non-authorizing contract.
+
 ## Security and privacy
 
 The core imports no provider, network, credential, subprocess, or file-writing
