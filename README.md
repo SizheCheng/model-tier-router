@@ -79,3 +79,25 @@ python -B scripts/evaluate_product_readiness.py --packet-root <real-canary-packe
 See `docs/generic-product-execution.md` for the contract, evidence, and promotion
 gates. Networked validators, secrets, confidential inputs, binary execution, and
 cross-repository atomic writes remain outside this component's current authority.
+## Managed Codex App data collection
+
+The component can be installed as Windows managed lifecycle hooks so every future
+local Codex App, CLI, and IDE development turn calls the same committed Router and
+collector runtime. The installation covers session, prompt, subagent, tool,
+permission, compaction, and stop events; records remain local, append-only,
+redacted, and SHA-256 bound. It neither launches another model nor sends network
+traffic.
+
+```powershell
+python -B scripts/build_codex_app_enforcement.py `
+  --output-directory <clean-bundle-directory> `
+  --dogfood-repository <this-repository> `
+  --router-repository <model-tier-router-repository> `
+  --install-root C:\ProgramData\OpenAI\Codex\managed-hooks\mtr-dogfood-r1 `
+  --data-root $env:USERPROFILE\.codex\mtr-dogfood-data
+```
+
+The generated `requirements.toml` pins hooks on through the supported managed
+configuration layer without disabling unrelated user hooks. See
+`docs/codex-app-enforcement.md` for installation, validation, privacy, export, and
+rollback details.

@@ -15,6 +15,8 @@ mtr-dogfood = "mtr_dogfood.cli:main"
 mtr-dogfood-evaluate-release = "mtr_dogfood.product_release:main"
 mtr-dogfood-run-release-matrix = "mtr_dogfood.product_matrix:main"
 mtr-dogfood-evaluate-readiness = "mtr_dogfood.product_readiness:main"
+mtr-dogfood-codex-data = "mtr_dogfood.codex_app_enforcement:main"
+mtr-dogfood-build-codex-enforcement = "mtr_dogfood.codex_app_bundle:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

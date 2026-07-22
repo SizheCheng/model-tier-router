@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-development-event.schema.json",
+  "title": "Codex App managed dogfood development event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "event_id",
+    "recorded_at_utc",
+    "hook_event_name",
+    "session_id",
+    "turn_id",
+    "cwd",
+    "model",
+    "permission_mode",
+    "development",
+    "redacted_or_truncated",
+    "details",
+    "record_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "component_id": {"const": "MTR_CODEX_APP_DEVELOPMENT_DATA_R1"},
+    "event_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "recorded_at_utc": {"type": "string", "minLength": 1},
+    "hook_event_name": {
+      "enum": [
+        "SessionStart",
+        "SubagentStart",
+        "PreToolUse",
+        "PermissionRequest",
+        "PostToolUse",
+        "PreCompact",
+        "PostCompact",
+        "UserPromptSubmit",
+        "SubagentStop",
+        "Stop"
+      ]
+    },
+    "session_id": {"type": "string", "minLength": 1},
+    "turn_id": {"type": ["string", "null"]},
+    "cwd": {"type": "string", "minLength": 1},
+    "model": {"type": ["string", "null"]},
+    "permission_mode": {"type": ["string", "null"]},
+    "development": {"type": "boolean"},
+    "redacted_or_truncated": {"type": "boolean"},
+    "details": {"type": "object"},
+    "router_assessment": {"type": "object"},
+    "coverage": {"type": "object"},
+    "record_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
