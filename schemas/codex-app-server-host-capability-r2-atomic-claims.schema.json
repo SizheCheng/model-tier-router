@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-host-capability-r2-atomic-claims.schema.json",
+  "title": "Host-owned atomic Codex model launch capability claims R2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capability_version",
+    "capability_id",
+    "issuer",
+    "audience",
+    "issued_at_utc",
+    "expires_at_utc",
+    "nonce_sha256",
+    "launch_intent_sha256",
+    "authorized_method",
+    "maximum_model_starts",
+    "host_request_binding_sha256",
+    "host_context_binding_sha256",
+    "host_instance_sha256",
+    "connection_sha256",
+    "consent_grant_sha256",
+    "budget_lease_sha256",
+    "host_catalog_validated",
+    "host_entitlement_validated",
+    "host_assignment_validated",
+    "host_consent_validated",
+    "host_attestation_validated",
+    "host_context_binding_validated",
+    "host_transport_identity_validated",
+    "host_budget_reserved",
+    "permission_expansion_authorized",
+    "approval_policy_override_authorized",
+    "sandbox_override_authorized",
+    "network_expansion_authorized",
+    "authorized_write_scope"
+  ],
+  "properties": {
+    "capability_version": {
+      "type": "string",
+      "const": "2.0.0"
+    },
+    "capability_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "issuer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "audience": {
+      "$ref": "#/$defs/identifier"
+    },
+    "issued_at_utc": {
+      "$ref": "#/$defs/utc"
+    },
+    "expires_at_utc": {
+      "$ref": "#/$defs/utc"
+    },
+    "nonce_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "launch_intent_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authorized_method": {
+      "type": "string",
+      "const": "turn/start"
+    },
+    "maximum_model_starts": {
+      "type": "integer",
+      "const": 1
+    },
+    "host_request_binding_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "host_context_binding_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "host_instance_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "connection_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "consent_grant_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "budget_lease_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "host_catalog_validated": {
+      "type": "boolean",
+      "const": true
+    },
+    "host_entitlement_validated": {
+      "type": "boolean",
+      "const": true
+    },
+    "host_assignment_validated": {
+      "type": "boolean",
+      "const": true
+    },
+    "host_consent_validated": {
+      "type": "boolean",
+      "const": true
+    },
+    "host_attestation_validated": {
+      "type": "boolean",
+      "const": true
+    },
+    "host_context_binding_validated": {
+      "type": "boolean",
+      "const": true
+    },
+    "host_transport_identity_validated": {
+      "type": "boolean",
+      "const": true
+    },
+    "host_budget_reserved": {
+      "type": "boolean",
+      "const": true
+    },
+    "permission_expansion_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "approval_policy_override_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "sandbox_override_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "network_expansion_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "authorized_write_scope": {
+      "type": "array",
+      "maxItems": 0
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    }
+  }
+}

@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-atomic-host-launch-r1-intent.schema.json",
+  "title": "Non-authorizing Codex App Server atomic host launch intent R1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "proposal_sha256",
+    "plan_sha256",
+    "assignment_id",
+    "client_info_name",
+    "request",
+    "selection",
+    "host_bindings",
+    "authority_boundary",
+    "privacy",
+    "intent_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_APP_SERVER_ATOMIC_HOST_LAUNCH_R1"
+    },
+    "status": {
+      "type": "string",
+      "const": "host_capability_required"
+    },
+    "proposal_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "plan_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "assignment_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "client_info_name": {
+      "$ref": "#/$defs/identifier"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "request_id",
+        "thread_id_sha256",
+        "non_selection_params_preserved"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "turn/start"
+        },
+        "request_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "thread_id_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "non_selection_params_preserved": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "selection": {
+      "$ref": "#/$defs/selection"
+    },
+    "host_bindings": {
+      "$ref": "#/$defs/host_bindings"
+    },
+    "authority_boundary": {
+      "$ref": "#/$defs/intent_authority"
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "intent_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "effort"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/identifier"
+        },
+        "effort": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "host_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_request_binding_sha256",
+        "host_context_binding_sha256",
+        "host_instance_sha256",
+        "connection_sha256",
+        "consent_grant_sha256",
+        "budget_lease_sha256"
+      ],
+      "properties": {
+        "host_request_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "host_context_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "host_instance_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "connection_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "consent_grant_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "budget_lease_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "intent_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_authorized_by_router",
+        "execution_authorized_by_intent",
+        "host_atomic_launch_required",
+        "permission_expansion_authorized",
+        "approval_policy_override_authorized",
+        "sandbox_override_authorized",
+        "network_expansion_authorized",
+        "authorized_write_scope"
+      ],
+      "properties": {
+        "execution_authorized_by_router": {
+          "type": "boolean",
+          "const": false
+        },
+        "execution_authorized_by_intent": {
+          "type": "boolean",
+          "const": false
+        },
+        "host_atomic_launch_required": {
+          "type": "boolean",
+          "const": true
+        },
+        "permission_expansion_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "approval_policy_override_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "sandbox_override_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "network_expansion_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "authorized_write_scope": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_capability_envelope_persisted",
+        "raw_prompt_persisted",
+        "raw_thread_id_persisted",
+        "raw_turn_id_persisted",
+        "raw_path_persisted",
+        "raw_app_server_response_persisted",
+        "raw_model_output_persisted",
+        "raw_tool_output_persisted",
+        "raw_error_text_persisted",
+        "host_request_binding_must_be_keyed"
+      ],
+      "properties": {
+        "raw_capability_envelope_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_prompt_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_thread_id_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_turn_id_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_path_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_app_server_response_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_model_output_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_tool_output_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_error_text_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "host_request_binding_must_be_keyed": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    }
+  }
+}

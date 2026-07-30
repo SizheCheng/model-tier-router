@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-model-experiment-r1-proposal.schema.json",
+  "title": "Non-authorizing Codex App Server model experiment proposal R1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "assignment_id",
+    "plan_sha256",
+    "experiment",
+    "selection",
+    "app_server_binding",
+    "origin",
+    "thread_start_override",
+    "turn_start_override",
+    "authority_boundary",
+    "privacy",
+    "proposal_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_APP_SERVER_MODEL_EXPERIMENT_R1"
+    },
+    "status": {
+      "type": "string",
+      "const": "host_review_required"
+    },
+    "assignment_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "plan_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "assignment_unit_sha256",
+        "assignment_bucket",
+        "arm"
+      ],
+      "properties": {
+        "experiment_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "assignment_unit_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assignment_bucket": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "arm": {
+          "type": "string",
+          "enum": [
+            "ROUTER_AUTO",
+            "FIXED_MODEL_CONTROL"
+          ]
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "router_profile",
+        "requested_model",
+        "requested_effort"
+      ],
+      "properties": {
+        "router_profile": {
+          "$ref": "#/$defs/identifier"
+        },
+        "requested_model": {
+          "$ref": "#/$defs/identifier"
+        },
+        "requested_effort": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "app_server_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol_version",
+        "codex_cli_version",
+        "protocol_schema_sha256",
+        "model_list_response_sha256",
+        "model_catalog_sha256",
+        "selected_model_entry_sha256",
+        "client_info_name",
+        "catalog_complete"
+      ],
+      "properties": {
+        "protocol_version": {
+          "type": "string",
+          "const": "v2"
+        },
+        "codex_cli_version": {
+          "$ref": "#/$defs/identifier"
+        },
+        "protocol_schema_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "model_list_response_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "model_catalog_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "selected_model_entry_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "client_info_name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "catalog_complete": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "origin": {
+      "$ref": "#/$defs/origin"
+    },
+    "thread_start_override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "turn_start_override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "effort"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/identifier"
+        },
+        "effort": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "authority_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_authorized",
+        "host_catalog_and_entitlement_validation_required",
+        "host_assignment_validation_required",
+        "permission_expansion_authorized",
+        "approval_policy_override_authorized",
+        "sandbox_override_authorized",
+        "network_expansion_authorized",
+        "authorized_write_scope"
+      ],
+      "properties": {
+        "execution_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "host_catalog_and_entitlement_validation_required": {
+          "type": "boolean",
+          "const": true
+        },
+        "host_assignment_validation_required": {
+          "type": "boolean",
+          "const": true
+        },
+        "permission_expansion_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "approval_policy_override_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "sandbox_override_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "network_expansion_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "authorized_write_scope": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "proposal_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "issuer",
+        "attestation_requested",
+        "attestation_evidence_sha256",
+        "opaque_token_persisted"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "product",
+            "host_test",
+            "integration_test"
+          ]
+        },
+        "issuer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "attestation_requested": {
+          "type": "boolean",
+          "const": true
+        },
+        "attestation_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "opaque_token_persisted": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_prompt_persisted",
+        "raw_model_output_persisted",
+        "raw_tool_output_persisted",
+        "opaque_attestation_token_persisted"
+      ],
+      "properties": {
+        "raw_prompt_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_model_output_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_tool_output_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "opaque_attestation_token_persisted": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}

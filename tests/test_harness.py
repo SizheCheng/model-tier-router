@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from mtr_dogfood.codex_runner import (
     classify_infrastructure,
     extract_usage,
     observe_model_execution,
+    run_codex,
     resolve_codex_executable,
 )
 from mtr_dogfood.cli import _forbidden_action_detected
@@ -311,6 +313,30 @@ class CodexRunnerTests(unittest.TestCase):
 
     def test_missing_usage_is_unavailable(self):
         self.assertIsNone(extract_usage([json.dumps({"type": "turn.completed"})])["input_tokens"])
+
+    def test_live_kill_switch_cancels_local_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = run_codex(
+                [
+                    sys.executable,
+                    "-B",
+                    "-c",
+                    "import time; time.sleep(10)",
+                ],
+                "local fixture",
+                root / "raw",
+                worktree=root,
+                timeout_seconds=30,
+                should_cancel=lambda: True,
+            )
+            self.assertTrue(result["child_process_started"])
+            self.assertTrue(result["cancelled"])
+            self.assertFalse(result["timed_out"])
+            self.assertEqual(
+                result["infrastructure_failure_class"],
+                "OPERATOR_KILL_SWITCH",
+            )
 
     def test_rate_limit_classification(self):
         self.assertEqual(

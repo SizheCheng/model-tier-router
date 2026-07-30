@@ -230,6 +230,7 @@ def run_codex(
     worktree: str | Path,
     timeout_seconds: int,
     on_process_started: Callable[[], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     raw = Path(raw_directory)
     raw.mkdir(parents=True, exist_ok=True)
@@ -268,6 +269,7 @@ def run_codex(
             "model_execution_observed": False,
             "model_execution_completed": False,
             "timed_out": False,
+            "cancelled": False,
             "command_count": 0,
             "file_change_event_count": 0,
             **{key: None for key in (
@@ -286,12 +288,40 @@ def run_codex(
     if on_process_started is not None:
         on_process_started()
     timed_out = False
-    try:
-        stdout, stderr = process.communicate(input=prompt, timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        process.kill()
-        stdout, stderr = process.communicate()
+    cancelled = False
+    if should_cancel is None:
+        try:
+            stdout, stderr = process.communicate(input=prompt, timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            stdout, stderr = process.communicate()
+    else:
+        if process.stdin is None:
+            process.kill()
+            process.communicate()
+            raise RuntimeError("CODEX_STDIN_UNAVAILABLE")
+        process.stdin.write(prompt)
+        process.stdin.close()
+        process.stdin = None
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            if should_cancel():
+                cancelled = True
+                process.kill()
+                stdout, stderr = process.communicate()
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                process.kill()
+                stdout, stderr = process.communicate()
+                break
+            try:
+                stdout, stderr = process.communicate(timeout=min(0.25, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
     elapsed = time.monotonic() - started
     events_path.write_text(stdout, encoding="utf-8")
     stdout_path.write_text(stdout, encoding="utf-8")
@@ -305,6 +335,7 @@ def run_codex(
         "model_execution_observed": observed,
         "model_execution_completed": completed,
         "timed_out": timed_out,
+        "cancelled": cancelled,
         "command_count": sum(1 for line in lines if '"item.type":"command_execution"' in line),
         "file_change_event_count": sum(
             1 for line in lines if '"item.type":"file_change"' in line
@@ -314,4 +345,6 @@ def run_codex(
     }
     if timed_out and result["infrastructure_failure_class"] is None and not observed:
         result["infrastructure_failure_class"] = "DEPENDENCY_OR_ENVIRONMENT_FAILURE"
+    if cancelled and result["infrastructure_failure_class"] is None:
+        result["infrastructure_failure_class"] = "OPERATOR_KILL_SWITCH"
     return result

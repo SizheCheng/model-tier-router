@@ -1,0 +1,336 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-model-experiment-r1-outcome.schema.json",
+  "title": "Privacy-safe Codex App Server model experiment outcome R1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "proposal_sha256",
+    "assignment_id",
+    "experiment",
+    "origin",
+    "identity",
+    "model",
+    "terminal",
+    "usage",
+    "items",
+    "privacy",
+    "outcome_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_APP_SERVER_MODEL_EXPERIMENT_R1"
+    },
+    "status": {
+      "type": "string",
+      "const": "observed"
+    },
+    "proposal_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "assignment_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "arm"
+      ],
+      "properties": {
+        "experiment_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "arm": {
+          "type": "string",
+          "enum": [
+            "ROUTER_AUTO",
+            "FIXED_MODEL_CONTROL"
+          ]
+        }
+      }
+    },
+    "origin": {
+      "$ref": "#/$defs/origin"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread_id_sha256",
+        "turn_id_sha256"
+      ],
+      "properties": {
+        "thread_id_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "turn_id_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested_model",
+        "requested_effort",
+        "resolved_model",
+        "reroute_count",
+        "reroutes"
+      ],
+      "properties": {
+        "requested_model": {
+          "$ref": "#/$defs/identifier"
+        },
+        "requested_effort": {
+          "$ref": "#/$defs/identifier"
+        },
+        "resolved_model": {
+          "$ref": "#/$defs/identifier"
+        },
+        "reroute_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reroutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from_model",
+              "to_model",
+              "reason"
+            ],
+            "properties": {
+              "from_model": {
+                "$ref": "#/$defs/identifier"
+              },
+              "to_model": {
+                "$ref": "#/$defs/identifier"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "highRiskCyberActivity"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "turn_status",
+        "outcome_class",
+        "started_at_unix",
+        "completed_at_unix",
+        "duration_ms",
+        "error_present"
+      ],
+      "properties": {
+        "turn_status": {
+          "type": "string",
+          "enum": [
+            "completed",
+            "interrupted",
+            "failed"
+          ]
+        },
+        "outcome_class": {
+          "type": "string",
+          "enum": [
+            "success",
+            "cancelled",
+            "failure"
+          ]
+        },
+        "started_at_unix": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "completed_at_unix": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "error_present": {
+          "type": "boolean"
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observed",
+        "notification_count",
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "reasoning_output_tokens",
+        "total_tokens",
+        "model_context_window"
+      ],
+      "properties": {
+        "observed": {
+          "type": "boolean"
+        },
+        "notification_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_tokens": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "cached_input_tokens": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "output_tokens": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "reasoning_output_tokens": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "total_tokens": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        },
+        "model_context_window": {
+          "$ref": "#/$defs/nullable_nonnegative_integer"
+        }
+      }
+    },
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "type_counts",
+        "status_counts"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type_counts": {
+          "$ref": "#/$defs/counter"
+        },
+        "status_counts": {
+          "$ref": "#/$defs/counter"
+        }
+      }
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "outcome_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullable_nonnegative_integer": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "counter": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[A-Za-z0-9._-]{1,160}$": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "issuer",
+        "attestation_requested",
+        "attestation_evidence_sha256",
+        "opaque_token_persisted"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "product",
+            "host_test",
+            "integration_test"
+          ]
+        },
+        "issuer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "attestation_requested": {
+          "type": "boolean",
+          "const": true
+        },
+        "attestation_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "opaque_token_persisted": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_prompt_persisted",
+        "raw_model_output_persisted",
+        "raw_tool_output_persisted",
+        "opaque_attestation_token_persisted"
+      ],
+      "properties": {
+        "raw_prompt_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_model_output_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_tool_output_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "opaque_attestation_token_persisted": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/authorized-model-dispatch-r2-preflight.schema.json",
+  "title": "Offline preflight for authorized model dispatch R2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "checked_at_utc",
+    "plan",
+    "checks",
+    "preflight_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_AUTHORIZED_MODEL_DISPATCH_R2"
+    },
+    "status": {
+      "type": "string",
+      "const": "ready"
+    },
+    "checked_at_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan": {
+      "$ref": "./authorized-model-dispatch-r2-assignment.schema.json"
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorization_active",
+        "kill_switch_active",
+        "kill_switch_path_sha256",
+        "codex_executable_sha256",
+        "dispatcher_source_sha256",
+        "output_schema_sha256",
+        "command_sha256",
+        "model_process_started",
+        "network_request_started"
+      ],
+      "properties": {
+        "authorization_active": {
+          "type": "boolean",
+          "const": true
+        },
+        "kill_switch_active": {
+          "type": "boolean",
+          "const": false
+        },
+        "kill_switch_path_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "codex_executable_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "dispatcher_source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "command_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "model_process_started": {
+          "type": "boolean",
+          "const": false
+        },
+        "network_request_started": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "preflight_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

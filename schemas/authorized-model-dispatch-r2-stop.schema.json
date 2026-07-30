@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/authorized-model-dispatch-r2-stop.schema.json",
+  "title": "Irreversible authorization kill switch for model dispatch R2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "authorization_id",
+    "reason",
+    "stopped_at_utc"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_AUTHORIZED_MODEL_DISPATCH_R2"
+    },
+    "status": {
+      "type": "string",
+      "const": "stopped"
+    },
+    "authorization_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "stopped_at_utc": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

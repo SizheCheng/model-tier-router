@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-host-launch-r1-receipt.schema.json",
+  "title": "Codex App Server Host Launch R1 Redacted Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "proposal_sha256",
+    "capability",
+    "request",
+    "selection",
+    "authority_boundary",
+    "privacy",
+    "receipt_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "const": "MTR_CODEX_APP_SERVER_HOST_ADAPTER_R1"
+    },
+    "status": {
+      "const": "compiled_not_sent"
+    },
+    "proposal_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id_sha256",
+        "envelope_sha256",
+        "issuer",
+        "audience",
+        "nonce_sha256",
+        "expires_at_utc",
+        "verifier_invoked",
+        "nonce_consumed"
+      ],
+      "properties": {
+        "capability_id_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "issuer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "audience": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,160}$"
+        },
+        "nonce_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expires_at_utc": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "verifier_invoked": {
+          "const": true
+        },
+        "nonce_consumed": {
+          "const": true
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "request_id",
+        "thread_id_sha256",
+        "non_selection_params_preserved",
+        "request_sent",
+        "model_started"
+      ],
+      "properties": {
+        "method": {
+          "const": "turn/start"
+        },
+        "request_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "thread_id_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "non_selection_params_preserved": {
+          "const": true
+        },
+        "request_sent": {
+          "const": false
+        },
+        "model_started": {
+          "const": false
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "effort"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,160}$"
+        },
+        "effort": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,160}$"
+        }
+      }
+    },
+    "authority_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_authorized_by_router",
+        "model_selection_authorized_by_verified_host_capability",
+        "permission_expansion_authorized",
+        "approval_policy_override_authorized",
+        "sandbox_override_authorized",
+        "network_expansion_authorized",
+        "authorized_write_scope"
+      ],
+      "properties": {
+        "execution_authorized_by_router": {
+          "const": false
+        },
+        "model_selection_authorized_by_verified_host_capability": {
+          "const": true
+        },
+        "permission_expansion_authorized": {
+          "const": false
+        },
+        "approval_policy_override_authorized": {
+          "const": false
+        },
+        "sandbox_override_authorized": {
+          "const": false
+        },
+        "network_expansion_authorized": {
+          "const": false
+        },
+        "authorized_write_scope": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_capability_envelope_persisted",
+        "raw_prompt_persisted",
+        "raw_thread_id_persisted",
+        "raw_model_output_persisted",
+        "raw_tool_output_persisted",
+        "raw_error_text_persisted"
+      ],
+      "properties": {
+        "raw_capability_envelope_persisted": {
+          "const": false
+        },
+        "raw_prompt_persisted": {
+          "const": false
+        },
+        "raw_thread_id_persisted": {
+          "const": false
+        },
+        "raw_model_output_persisted": {
+          "const": false
+        },
+        "raw_tool_output_persisted": {
+          "const": false
+        },
+        "raw_error_text_persisted": {
+          "const": false
+        }
+      }
+    },
+    "receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

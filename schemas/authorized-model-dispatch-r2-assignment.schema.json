@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/authorized-model-dispatch-r2-assignment.schema.json",
+  "title": "Hash-bound model assignment for authorized dispatch R2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "assignment_id",
+    "created_at_utc",
+    "authorization",
+    "experiment",
+    "router_advisory",
+    "model_mapping",
+    "execution",
+    "authority_boundary",
+    "plan_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_AUTHORIZED_MODEL_DISPATCH_R2"
+    },
+    "status": {
+      "type": "string",
+      "const": "planned"
+    },
+    "assignment_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "created_at_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorization_id",
+        "authorization_sha256",
+        "expires_at_utc"
+      ],
+      "properties": {
+        "authorization_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorization_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "expires_at_utc": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "assignment_unit_sha256",
+        "router_share_basis_points",
+        "assignment_bucket",
+        "arm"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assignment_unit_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "router_share_basis_points": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "assignment_bucket": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "arm": {
+          "type": "string",
+          "enum": [
+            "ROUTER_AUTO",
+            "FIXED_MODEL_CONTROL"
+          ]
+        }
+      }
+    },
+    "router_advisory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_profile",
+        "decision_sha256",
+        "execution_authorized",
+        "authorized_write_scope"
+      ],
+      "properties": {
+        "selected_profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "execution_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "authorized_write_scope": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+    "model_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mapping_version",
+        "model_map_sha256"
+      ],
+      "properties": {
+        "mapping_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_map_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "selected_model",
+        "reasoning_effort",
+        "model_start_ordinal",
+        "maximum_model_starts"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected_model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reasoning_effort": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_start_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximum_model_starts": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "authority_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_selection_authorized",
+        "new_process_launch_authorized",
+        "permission_expansion_authorized",
+        "authorized_write_scope",
+        "network_access_authorized",
+        "model_service_data_export_authorized"
+      ],
+      "properties": {
+        "model_selection_authorized": {
+          "type": "boolean",
+          "const": true
+        },
+        "new_process_launch_authorized": {
+          "type": "boolean",
+          "const": true
+        },
+        "permission_expansion_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "authorized_write_scope": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "network_access_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "model_service_data_export_authorized": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

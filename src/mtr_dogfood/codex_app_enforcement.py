@@ -35,6 +35,23 @@ SUPPORTED_EVENTS = {
     "SubagentStop",
     "Stop",
 }
+RECORD_REQUIRED_FIELDS = {
+    "schema_version",
+    "component_id",
+    "event_id",
+    "recorded_at_utc",
+    "hook_event_name",
+    "session_id",
+    "turn_id",
+    "cwd",
+    "model",
+    "permission_mode",
+    "development",
+    "redacted_or_truncated",
+    "details",
+    "record_sha256",
+}
+RECORD_ALLOWED_FIELDS = RECORD_REQUIRED_FIELDS | {"router_assessment", "coverage"}
 DEVELOPMENT_TERMS = (
     "implement",
     "implementation",
@@ -92,7 +109,10 @@ SECRET_PATTERNS = (
     re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b", re.IGNORECASE),
     re.compile(
         r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|secret)\b"
-        r"(\s*[:=]\s*)([^\s,;\]\}\)\"']{4,}|\"[^\"]{4,}\"|'[^']{4,}')"
+        r"(\s*[:=]\s*)"
+        r"((?!\[REDACTED\])[^\s,;\]\}\)\"']{4,}|"
+        r"\"(?!\[REDACTED\]\")[^\"]{4,}\"|"
+        r"'(?!\[REDACTED\]')[^']{4,}')"
     ),
     re.compile(r"(?i)(https?://)([^/@\s:]+):([^/@\s]+)@"),
 )
@@ -491,12 +511,54 @@ def process_hook_event(event: dict[str, Any], data_root: str | Path) -> tuple[di
     return response, receipt
 
 
+def _record_shape_valid(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if set(value) - RECORD_ALLOWED_FIELDS or RECORD_REQUIRED_FIELDS - set(value):
+        return False
+    if value.get("schema_version") != SCHEMA_VERSION:
+        return False
+    if value.get("component_id") != COMPONENT_ID:
+        return False
+    if not isinstance(value.get("event_id"), str) or re.fullmatch(
+        r"[0-9a-f]{32}", value["event_id"]
+    ) is None:
+        return False
+    if not isinstance(value.get("recorded_at_utc"), str) or not value["recorded_at_utc"]:
+        return False
+    if value.get("hook_event_name") not in SUPPORTED_EVENTS:
+        return False
+    if not isinstance(value.get("session_id"), str) or not value["session_id"]:
+        return False
+    if value.get("turn_id") is not None and not isinstance(value.get("turn_id"), str):
+        return False
+    if not isinstance(value.get("cwd"), str) or not value["cwd"]:
+        return False
+    if value.get("model") is not None and not isinstance(value.get("model"), str):
+        return False
+    if value.get("permission_mode") is not None and not isinstance(
+        value.get("permission_mode"), str
+    ):
+        return False
+    if type(value.get("development")) is not bool:
+        return False
+    if type(value.get("redacted_or_truncated")) is not bool:
+        return False
+    if not isinstance(value.get("details"), dict):
+        return False
+    if "router_assessment" in value and not isinstance(value["router_assessment"], dict):
+        return False
+    if "coverage" in value and not isinstance(value["coverage"], dict):
+        return False
+    return isinstance(value.get("record_sha256"), str) and re.fullmatch(
+        r"[0-9a-f]{64}", value["record_sha256"]
+    ) is not None
+
+
 def _verify_record(value: Any) -> bool:
-    if not isinstance(value, dict) or value.get("component_id") != COMPONENT_ID:
+    if not _record_shape_valid(value):
         return False
     recorded = value.get("record_sha256")
-    if not isinstance(recorded, str):
-        return False
     view = dict(value)
     view.pop("record_sha256", None)
     return recorded == _sha256_bytes(_canonical_json_bytes(view))

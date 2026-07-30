@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-host-conformance-r1-report.schema.json",
+  "title": "Portable Codex App Server host conformance report R1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "generated_at_utc",
+    "subject",
+    "cases",
+    "summary",
+    "authority_boundary",
+    "local_boundary",
+    "privacy",
+    "report_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_APP_SERVER_HOST_CONFORMANCE_R1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["conformant", "non_conformant"]
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/case_result"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "authority_boundary": {
+      "$ref": "#/$defs/authority_boundary"
+    },
+    "local_boundary": {
+      "$ref": "#/$defs/local_boundary"
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "report_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "implementation_id",
+        "implementation_version",
+        "implementation_sha256",
+        "client_info_name",
+        "protocol_schema_sha256",
+        "conformance_mode"
+      ],
+      "properties": {
+        "implementation_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "implementation_version": {
+          "$ref": "#/$defs/identifier"
+        },
+        "implementation_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "client_info_name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "protocol_schema_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "conformance_mode": {
+          "type": "string",
+          "const": "synthetic_no_product_model"
+        }
+      }
+    },
+    "case_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "status",
+        "result_code",
+        "assertions",
+        "evidence_sha256"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "enum": [
+            "post_capability_mutation_rejected",
+            "capability_replay_rejected",
+            "integer_start_budget_enforced",
+            "durable_failure_redaction_enforced",
+            "selection_only_mutation_preserved",
+            "initial_response_identity_bound",
+            "terminal_outcome_identity_joined",
+            "host_only_action_boundary_enforced"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["passed", "failed"]
+        },
+        "result_code": {
+          "type": "string",
+          "enum": ["PASS", "FAIL_CLOSED"]
+        },
+        "assertions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "passed", "failed"],
+      "properties": {
+        "required": {
+          "type": "integer",
+          "const": 8
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        }
+      }
+    },
+    "authority_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_authorized_by_router",
+        "execution_authorized_by_conformance_suite",
+        "host_test_transport_required",
+        "product_model_start_authorized",
+        "permission_expansion_authorized",
+        "approval_policy_override_authorized",
+        "sandbox_override_authorized",
+        "network_expansion_authorized",
+        "authorized_write_scope"
+      ],
+      "properties": {
+        "execution_authorized_by_router": {"const": false},
+        "execution_authorized_by_conformance_suite": {"const": false},
+        "host_test_transport_required": {"const": true},
+        "product_model_start_authorized": {"const": false},
+        "permission_expansion_authorized": {"const": false},
+        "approval_policy_override_authorized": {"const": false},
+        "sandbox_override_authorized": {"const": false},
+        "network_expansion_authorized": {"const": false},
+        "authorized_write_scope": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+    "local_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_signer_included",
+        "fallback_capability_issuer_included",
+        "app_server_transport_included",
+        "implicit_network_path_included",
+        "product_model_launcher_included"
+      ],
+      "properties": {
+        "local_signer_included": {"const": false},
+        "fallback_capability_issuer_included": {"const": false},
+        "app_server_transport_included": {"const": false},
+        "implicit_network_path_included": {"const": false},
+        "product_model_launcher_included": {"const": false}
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_capability_envelope_persisted",
+        "raw_request_persisted",
+        "raw_prompt_persisted",
+        "raw_thread_id_persisted",
+        "raw_turn_id_persisted",
+        "raw_path_persisted",
+        "raw_app_server_response_persisted",
+        "raw_model_output_persisted",
+        "raw_tool_output_persisted",
+        "raw_error_text_persisted",
+        "only_redacted_hash_evidence_persisted"
+      ],
+      "properties": {
+        "raw_capability_envelope_persisted": {"const": false},
+        "raw_request_persisted": {"const": false},
+        "raw_prompt_persisted": {"const": false},
+        "raw_thread_id_persisted": {"const": false},
+        "raw_turn_id_persisted": {"const": false},
+        "raw_path_persisted": {"const": false},
+        "raw_app_server_response_persisted": {"const": false},
+        "raw_model_output_persisted": {"const": false},
+        "raw_tool_output_persisted": {"const": false},
+        "raw_error_text_persisted": {"const": false},
+        "only_redacted_hash_evidence_persisted": {"const": true}
+      }
+    }
+  }
+}

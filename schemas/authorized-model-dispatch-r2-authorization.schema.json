@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/authorized-model-dispatch-r2-authorization.schema.json",
+  "title": "Explicit user authorization for model-tier-router dispatch R2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "authorization_id",
+    "authorized_by",
+    "issued_at_utc",
+    "expires_at_utc",
+    "experiment_id",
+    "allowed_repository_roots",
+    "allowed_models",
+    "control_model",
+    "control_reasoning_effort",
+    "router_share_basis_points",
+    "maximum_model_starts",
+    "model_selection_authorized",
+    "new_process_launch_authorized",
+    "permission_expansion_authorized",
+    "authorized_write_scope",
+    "network_access_authorized",
+    "model_service_data_export_authorized"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_AUTHORIZED_MODEL_DISPATCH_R2"
+    },
+    "authorization_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "authorized_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "issued_at_utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$"
+    },
+    "expires_at_utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$"
+    },
+    "experiment_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "allowed_repository_roots": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "allowed_models": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "control_model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "control_reasoning_effort": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$"
+    },
+    "router_share_basis_points": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999
+    },
+    "maximum_model_starts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "model_selection_authorized": {
+      "type": "boolean",
+      "const": true
+    },
+    "new_process_launch_authorized": {
+      "type": "boolean",
+      "const": true
+    },
+    "permission_expansion_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "authorized_write_scope": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "network_access_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "model_service_data_export_authorized": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}

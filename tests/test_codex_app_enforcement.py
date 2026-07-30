@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import subprocess
@@ -10,6 +11,9 @@ from unittest import mock
 
 from mtr_dogfood.codex_app_enforcement import (
     CodexAppEnforcementError,
+    SECRET_PATTERNS,
+    _canonical_json_bytes,
+    _redact_text,
     _strict_json,
     classify_development,
     data_status,
@@ -48,6 +52,20 @@ def _event(name: str, root: Path, **values: object) -> dict[str, object]:
 
 
 class CodexAppEnforcementTests(unittest.TestCase):
+    def test_redaction_is_idempotent_and_markers_do_not_retrigger(self):
+        secret = "sk-abcdefghijklmnopqrstuvwxyz123456"
+        redacted, changed = _redact_text(
+            f"secret={secret} api_key={secret} password={secret}"
+        )
+        second, changed_again = _redact_text(redacted)
+        self.assertTrue(changed)
+        self.assertFalse(changed_again)
+        self.assertEqual(second, redacted)
+        self.assertNotIn(secret, redacted)
+        self.assertNotIn("[REDACTED]]", redacted)
+        for pattern in SECRET_PATTERNS:
+            self.assertIsNone(pattern.search(redacted))
+
     def test_development_prompt_calls_router_and_redacts_secrets(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -141,6 +159,31 @@ class CodexAppEnforcementTests(unittest.TestCase):
             value = json.loads(path.read_text(encoding="utf-8"))
             value["model"] = "tampered"
             path.write_text(json.dumps(value), encoding="utf-8")
+            status = data_status(data)
+            self.assertEqual(status["status"], "failed")
+            self.assertEqual(status["record_count"], 0)
+            with self.assertRaisesRegex(
+                CodexAppEnforcementError, "EXPORT_RECORD_INTEGRITY_INVALID"
+            ):
+                export_data(data, root / "export.jsonl")
+
+    def test_schema_invalid_but_rehashed_record_fails_status_and_export(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            _response, receipt = process_hook_event(
+                _event("SessionStart", root, source="startup", turn_id=None),
+                data,
+            )
+            path = Path(str(receipt["record_path"]))
+            value = json.loads(path.read_text(encoding="utf-8"))
+            value["unexpected_field"] = "schema drift"
+            view = dict(value)
+            view.pop("record_sha256")
+            value["record_sha256"] = hashlib.sha256(
+                _canonical_json_bytes(view)
+            ).hexdigest()
+            path.write_bytes(_canonical_json_bytes(value))
             status = data_status(data)
             self.assertEqual(status["status"], "failed")
             self.assertEqual(status["record_count"], 0)

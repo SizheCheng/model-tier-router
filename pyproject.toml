@@ -17,6 +17,9 @@ mtr-dogfood-run-release-matrix = "mtr_dogfood.product_matrix:main"
 mtr-dogfood-evaluate-readiness = "mtr_dogfood.product_readiness:main"
 mtr-dogfood-codex-data = "mtr_dogfood.codex_app_enforcement:main"
 mtr-dogfood-build-codex-enforcement = "mtr_dogfood.codex_app_bundle:main"
+mtr-dogfood-authorized-dispatch = "mtr_dogfood.authorized_dispatcher:main"
+mtr-dogfood-authorized-dispatch-stop = "mtr_dogfood.authorized_dispatcher:stop_main"
+mtr-dogfood-verify-app-server-conformance = "mtr_dogfood.app_server_upstream_verifier:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

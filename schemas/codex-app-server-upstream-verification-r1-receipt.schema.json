@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-upstream-verification-r1-receipt.schema.json",
+  "title": "Independent Codex App Server host conformance verification receipt R1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "codex",
+    "schema_binding_sha256",
+    "protocol_schema_sha256",
+    "subject_sha256",
+    "report_sha256",
+    "conformance_status",
+    "verified",
+    "authority_boundary",
+    "privacy",
+    "verification_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_APP_SERVER_UPSTREAM_VERIFIER_R1"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "verified_conformant",
+        "verified_non_conformant"
+      ]
+    },
+    "codex": {
+      "$ref": "#/$defs/codex"
+    },
+    "schema_binding_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "protocol_schema_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "subject_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "conformance_status": {
+      "type": "string",
+      "enum": [
+        "conformant",
+        "non_conformant"
+      ]
+    },
+    "verified": {
+      "type": "boolean"
+    },
+    "authority_boundary": {
+      "$ref": "#/$defs/verification_authority"
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "verification_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "verified_conformant"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conformance_status": {
+            "const": "conformant"
+          },
+          "verified": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "verified_non_conformant"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conformance_status": {
+            "const": "non_conformant"
+          },
+          "verified": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "codex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "build_sha256",
+        "experimental_api_included"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._+/-]{0,127}$"
+        },
+        "build_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "experimental_api_included": {
+          "type": "boolean"
+        }
+      }
+    },
+    "verification_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_authorized",
+        "product_model_start_authorized",
+        "host_owned_driver_required",
+        "permission_expansion_authorized",
+        "network_expansion_authorized"
+      ],
+      "properties": {
+        "execution_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "product_model_start_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "host_owned_driver_required": {
+          "type": "boolean",
+          "const": true
+        },
+        "permission_expansion_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "network_expansion_authorized": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_schema_persisted",
+        "raw_report_persisted",
+        "raw_subject_persisted",
+        "only_digest_evidence_persisted"
+      ],
+      "properties": {
+        "raw_schema_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_report_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_subject_persisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "only_digest_evidence_persisted": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    }
+  }
+}

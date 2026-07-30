@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-atomic-host-launch-r1-join.schema.json",
+  "title": "Atomic host launch to App Server outcome join R1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "launch_receipt_sha256",
+    "outcome_sha256",
+    "proposal_sha256",
+    "assignment_id",
+    "experiment_id",
+    "arm",
+    "turn_id_sha256",
+    "requested_model",
+    "requested_effort",
+    "resolved_model",
+    "outcome_class",
+    "join_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_APP_SERVER_ATOMIC_HOST_LAUNCH_R1"
+    },
+    "status": {
+      "type": "string",
+      "const": "launch_outcome_joined"
+    },
+    "launch_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "outcome_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "proposal_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "assignment_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "experiment_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "arm": {
+      "type": "string",
+      "enum": [
+        "ROUTER_AUTO",
+        "FIXED_MODEL_CONTROL"
+      ]
+    },
+    "turn_id_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "requested_model": {
+      "$ref": "#/$defs/identifier"
+    },
+    "requested_effort": {
+      "$ref": "#/$defs/identifier"
+    },
+    "resolved_model": {
+      "$ref": "#/$defs/identifier"
+    },
+    "outcome_class": {
+      "type": "string",
+      "enum": [
+        "success",
+        "cancelled",
+        "failure"
+      ]
+    },
+    "join_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-host-capability-r1-claims.schema.json",
+  "title": "Codex App Server Host Capability R1 Authenticated Claims",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capability_version",
+    "capability_id",
+    "issuer",
+    "audience",
+    "issued_at_utc",
+    "expires_at_utc",
+    "nonce_sha256",
+    "proposal_sha256",
+    "plan_sha256",
+    "assignment_id",
+    "protocol_schema_sha256",
+    "model_list_response_sha256",
+    "selected_model_entry_sha256",
+    "authorized_method",
+    "authorized_model",
+    "authorized_effort",
+    "maximum_model_starts",
+    "host_catalog_validated",
+    "host_entitlement_validated",
+    "host_assignment_validated",
+    "host_attestation_validated",
+    "permission_expansion_authorized",
+    "approval_policy_override_authorized",
+    "sandbox_override_authorized",
+    "network_expansion_authorized",
+    "authorized_write_scope"
+  ],
+  "properties": {
+    "capability_version": {
+      "const": "1.0.0"
+    },
+    "capability_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "issuer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "audience": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "issued_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "expires_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "nonce_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "proposal_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "plan_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "assignment_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "protocol_schema_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "model_list_response_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "selected_model_entry_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authorized_method": {
+      "const": "turn/start"
+    },
+    "authorized_model": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "authorized_effort": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,160}$"
+    },
+    "maximum_model_starts": {
+      "const": 1
+    },
+    "host_catalog_validated": {
+      "const": true
+    },
+    "host_entitlement_validated": {
+      "const": true
+    },
+    "host_assignment_validated": {
+      "const": true
+    },
+    "host_attestation_validated": {
+      "const": true
+    },
+    "permission_expansion_authorized": {
+      "const": false
+    },
+    "approval_policy_override_authorized": {
+      "const": false
+    },
+    "sandbox_override_authorized": {
+      "const": false
+    },
+    "network_expansion_authorized": {
+      "const": false
+    },
+    "authorized_write_scope": {
+      "type": "array",
+      "maxItems": 0
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

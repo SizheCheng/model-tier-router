@@ -101,3 +101,71 @@ The generated `requirements.toml` pins hooks on through the supported managed
 configuration layer without disabling unrelated user hooks. See
 `docs/codex-app-enforcement.md` for installation, validation, privacy, export, and
 rollback details.
+
+## Authorized model dispatch candidate
+
+R2 adds an explicit, separately versioned dispatcher for real model assignments
+on newly launched Codex CLI runs. A non-authorizing Router advisory is combined
+with a time-bounded user authorization, exact repository and model allowlists, a
+deterministic Router/control assignment, an atomic process-start budget, and
+append-only lifecycle receipts.
+
+The dispatcher never treats Router output as authority and cannot expand
+permissions, write scope, or child tool-network access. Offline preflight binds
+the authorization, assignment, installed Codex executable, output schema, and
+generated command without starting a model or consuming the start budget.
+A real run additionally requires explicit model-service data-export consent for
+the exact repository; model selection and child process authority cannot imply
+that consent.
+
+An append-only authorization STOP blocks future starts and is polled while the
+child is running. STOP is irreversible for that authorization ID. The candidate
+is not installed or deployed by this repository change.
+
+See `docs/authorized-model-dispatch-r2.md` for the interface,
+`docs/authorized-dispatch-threat-model-r2.md` for the security and retention
+contract, `docs/authorized-dispatch-real-pilot-r2.md` for the real experiment
+protocol, and `docs/openai-predispatch-model-selection-rfc-r2.md` for the
+proposed first-class Codex product seam.
+
+## Portable App Server host conformance
+
+R6 exercises the R5 atomic host-launch seam through an injected synthetic host
+test transport. It starts no product model and persists only a strict,
+redacted, SHA-256-bound conformance report. Independent verification requires
+the caller-owned expected implementation, client, and protocol subject; a
+self-rehashed subject cannot substitute for that binding. The eight required
+cases cover
+post-capability request mutation, replay, integer start budgets, failure
+redaction, selection-only request changes, initial-response identity, terminal
+outcome joining, and the host-only action boundary.
+
+See `docs/openai-app-server-host-conformance-r6.md` for the driver contract,
+negative cases, report schema, and the remaining production adoption gates.
+
+## Deterministic App Server upstream verification
+
+R7 fixes a reproducible schema-binding defect: repeated generation by the same
+Codex build can serialize JSON object keys in different orders and therefore
+produce different raw-file SHA-256 values for the same protocol. R7 binds the
+strict canonical JSON instead; the preserved semantic schema digest is
+`66ab7534f29e1ee7c065eb15c799d5f6e93fdd1d0ba86c262c3842a6a8f3d0c8`.
+It requires independently measured Codex version and native-build identity and
+verifies an R6 report against a caller-owned subject without starting App
+Server or a product model.
+
+See `docs/openai-app-server-upstream-verifier-r7.md` for the empirical drift,
+canonicalization contract, CLI, schemas, and remaining OpenAI-owned host gate.
+
+## Fail-closed experimental schema binding
+
+R8 fixes a claim-binding defect in R7: the verifier previously recorded the
+caller's `experimental_api_included` boolean without proving that the generated
+schema used the same generator mode. It now requires the official stable
+experimental-gating mock field, request, and response markers to be either all
+present or all absent and rejects both crossed declarations and partial marker
+sets. The correct default binding remains compatible.
+
+See `docs/openai-app-server-experimental-schema-binding-r8.md` for the live
+0.144.5 comparison, stable marker contract, attestation boundary, regression
+results, and unchanged OpenAI-owned host gate.

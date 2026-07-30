@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/codex-app-server-schema-binding-r1.schema.json",
+  "title": "Deterministic Codex App Server schema binding R1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component_id",
+    "status",
+    "codex",
+    "schema",
+    "required_surface",
+    "authority_boundary",
+    "binding_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "component_id": {
+      "type": "string",
+      "const": "MTR_CODEX_APP_SERVER_SCHEMA_BINDING_R1"
+    },
+    "status": {
+      "type": "string",
+      "const": "schema_bound"
+    },
+    "codex": {
+      "$ref": "#/$defs/codex"
+    },
+    "schema": {
+      "$ref": "#/$defs/schema"
+    },
+    "required_surface": {
+      "$ref": "#/$defs/required_surface"
+    },
+    "authority_boundary": {
+      "$ref": "#/$defs/binding_authority"
+    },
+    "binding_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "codex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "build_sha256",
+        "experimental_api_included"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._+/-]{0,127}$"
+        },
+        "build_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "experimental_api_included": {
+          "description": "Verified against the complete stable generator marker set; it is not a caller-only claim.",
+          "type": "boolean"
+        }
+      }
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "title",
+        "canonicalization",
+        "canonical_bytes",
+        "protocol_schema_sha256"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "const": "codex_app_server_protocol.v2.schemas.json"
+        },
+        "title": {
+          "type": "string",
+          "const": "CodexAppServerProtocolV2"
+        },
+        "canonicalization": {
+          "type": "string",
+          "const": "mtr-canonical-json-utf8-lf-v1"
+        },
+        "canonical_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "protocol_schema_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "required_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "InitializeParams",
+        "ModelListParams",
+        "ModelListResponse",
+        "TurnStartParams",
+        "TurnStartResponse",
+        "TurnStartedNotification"
+      ],
+      "properties": {
+        "InitializeParams": {
+          "const": [
+            "clientInfo"
+          ]
+        },
+        "ModelListParams": {
+          "const": [
+            "includeHidden"
+          ]
+        },
+        "ModelListResponse": {
+          "const": [
+            "data",
+            "nextCursor"
+          ]
+        },
+        "TurnStartParams": {
+          "const": [
+            "effort",
+            "input",
+            "model",
+            "threadId"
+          ]
+        },
+        "TurnStartResponse": {
+          "const": [
+            "turn"
+          ]
+        },
+        "TurnStartedNotification": {
+          "const": [
+            "threadId",
+            "turn"
+          ]
+        }
+      }
+    },
+    "binding_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_authorized",
+        "product_model_start_authorized",
+        "host_build_attested_by_binding",
+        "independent_expected_values_required"
+      ],
+      "properties": {
+        "execution_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "product_model_start_authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "host_build_attested_by_binding": {
+          "type": "boolean",
+          "const": false
+        },
+        "independent_expected_values_required": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    }
+  }
+}
