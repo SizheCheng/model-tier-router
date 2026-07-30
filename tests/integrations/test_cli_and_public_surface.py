@@ -15,7 +15,13 @@ SRC = ROOT / "src"
 SKILL = ROOT / "integrations" / "codex" / "model-tier-route"
 sys.path.insert(0, str(SRC))
 
-from model_tier_router import assess
+from model_tier_router import (
+    HostDispatchError,
+    assess,
+    build_atomic_launch_intent,
+    build_dispatch_proposal,
+    launch_atomic_turn_start,
+)
 from model_tier_router.core.decision import REQUEST_SCHEMA_VERSION
 from model_tier_router.core.policy import DEFAULT_POLICY
 from model_tier_router.core.profiles import DEFAULT_PROFILES
@@ -111,6 +117,9 @@ class PublicSurfaceTests(unittest.TestCase):
             "advisory-request.schema.json",
             "advisory-decision.schema.json",
             "capability-profile.schema.json",
+            "host-dispatch-intent.schema.json",
+            "host-dispatch-proposal.schema.json",
+            "host-dispatch-receipt.schema.json",
             "policy.schema.json",
             "task-envelope.schema.json",
             "router-decision.schema.json",
@@ -158,11 +167,42 @@ class PublicSurfaceTests(unittest.TestCase):
         self.assertEqual(completed.stderr, b"")
         self.assertEqual(strict_json_loads(completed.stdout), assess(request()))
 
+    def test_host_dispatch_has_no_provider_network_or_persistence_imports(self):
+        forbidden = {
+            "anthropic", "httpx", "openai", "os", "pathlib", "requests",
+            "socket", "subprocess", "urllib",
+        }
+        path = SRC / "model_tier_router" / "host_dispatch.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imports = {
+            alias.name.split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            (node.module or "").lstrip(".").split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        }
+        self.assertTrue(imports.isdisjoint(forbidden))
+
+    def test_host_dispatch_api_is_public_but_requires_a_host(self):
+        for value in (
+            build_dispatch_proposal,
+            build_atomic_launch_intent,
+            launch_atomic_turn_start,
+            HostDispatchError,
+        ):
+            self.assertTrue(callable(value))
+        guide = (ROOT / "docs/host-dispatch.md").read_text(encoding="utf-8")
+        self.assertIn("capability is deliberately out of band", guide)
+        self.assertIn("not supplied by this package", guide)
+
     def test_package_metadata_has_no_runtime_dependency(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         for required in (
             'build-backend = "setuptools.build_meta"',
-            'version = "0.2.0"',
+            'version = "0.3.0"',
             'dependencies = []',
             'model-tier-router = "model_tier_router.cli:main"',
             'license = "Apache-2.0"',

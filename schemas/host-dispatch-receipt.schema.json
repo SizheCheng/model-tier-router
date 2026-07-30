@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SizheCheng/model-tier-router/main/schemas/host-dispatch-receipt.schema.json",
+  "title": "Host dispatch receipt v1alpha1",
+  "description": "A redacted host attestation for one authenticated standard turn/start request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "status", "proposal_sha256", "intent_sha256",
+    "capability", "host", "request", "selection", "response",
+    "authority_boundary", "privacy", "receipt_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "model_tier_router_host_dispatch_receipt_v1alpha1"
+    },
+    "status": {"type": "string", "const": "host_started"},
+    "proposal_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "intent_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_version", "capability_id_sha256", "envelope_sha256",
+        "issuer", "audience", "issued_at_utc", "expires_at_utc",
+        "nonce_sha256", "verified", "nonce_consumed"
+      ],
+      "properties": {
+        "capability_version": {"type": "string", "const": "1.0.0"},
+        "capability_id_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "envelope_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "issuer": {"type": "string", "minLength": 1, "maxLength": 200},
+        "audience": {"type": "string", "minLength": 1, "maxLength": 200},
+        "issued_at_utc": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$"
+        },
+        "expires_at_utc": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$"
+        },
+        "nonce_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "verified": {"type": "boolean", "const": true},
+        "nonce_consumed": {"type": "boolean", "const": true}
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_request_binding_sha256", "host_context_binding_sha256",
+        "host_instance_sha256", "connection_sha256",
+        "consent_grant_sha256", "budget_lease_sha256",
+        "request_binding_verified", "context_binding_verified",
+        "transport_identity_validated", "attestation_validated",
+        "permission_boundary_validated", "catalog_validated",
+        "entitlement_validated", "consent_validated", "budget_consumed"
+      ],
+      "properties": {
+        "host_request_binding_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "host_context_binding_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "host_instance_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "connection_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "consent_grant_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "budget_lease_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "request_binding_verified": {"type": "boolean", "const": true},
+        "context_binding_verified": {"type": "boolean", "const": true},
+        "transport_identity_validated": {"type": "boolean", "const": true},
+        "attestation_validated": {"type": "boolean", "const": true},
+        "permission_boundary_validated": {"type": "boolean", "const": true},
+        "catalog_validated": {"type": "boolean", "const": true},
+        "entitlement_validated": {"type": "boolean", "const": true},
+        "consent_validated": {"type": "boolean", "const": true},
+        "budget_consumed": {"type": "boolean", "const": true}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method", "request_id", "thread_id_sha256",
+        "non_selection_params_sha256", "exact_request_sha256",
+        "non_selection_params_preserved", "exact_request_sent"
+      ],
+      "properties": {
+        "method": {"type": "string", "const": "turn/start"},
+        "request_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "thread_id_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "non_selection_params_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "exact_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "non_selection_params_preserved": {"type": "boolean", "const": true},
+        "exact_request_sent": {"type": "boolean", "const": true}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "effort"],
+      "properties": {
+        "model": {"type": "string", "pattern": "^[A-Za-z0-9._:/+-]{1,200}$"},
+        "effort": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"}
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "turn_id_sha256", "turn_status", "turn_started",
+        "starts_consumed", "launched_at_utc"
+      ],
+      "properties": {
+        "turn_id_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "turn_status": {"type": "string", "const": "inProgress"},
+        "turn_started": {"type": "boolean", "const": true},
+        "starts_consumed": {"type": "integer", "const": 1},
+        "launched_at_utc": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$"
+        }
+      }
+    },
+    "authority_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "router_output_authorized_launch", "host_capability_authenticated",
+        "host_nonce_consumed", "host_start_budget_consumed",
+        "host_catalog_validated", "host_entitlement_validated",
+        "host_user_consent_validated", "permission_expansion_authorized"
+      ],
+      "properties": {
+        "router_output_authorized_launch": {"type": "boolean", "const": false},
+        "host_capability_authenticated": {"type": "boolean", "const": true},
+        "host_nonce_consumed": {"type": "boolean", "const": true},
+        "host_start_budget_consumed": {"type": "boolean", "const": true},
+        "host_catalog_validated": {"type": "boolean", "const": true},
+        "host_entitlement_validated": {"type": "boolean", "const": true},
+        "host_user_consent_validated": {"type": "boolean", "const": true},
+        "permission_expansion_authorized": {"type": "boolean", "const": false}
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt_persisted", "raw_request_persisted",
+        "raw_capability_persisted", "raw_turn_id_persisted"
+      ],
+      "properties": {
+        "prompt_persisted": {"type": "boolean", "const": false},
+        "raw_request_persisted": {"type": "boolean", "const": false},
+        "raw_capability_persisted": {"type": "boolean", "const": false},
+        "raw_turn_id_persisted": {"type": "boolean", "const": false}
+      }
+    },
+    "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

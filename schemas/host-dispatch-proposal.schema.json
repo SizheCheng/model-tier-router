@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SizheCheng/model-tier-router/main/schemas/host-dispatch-proposal.schema.json",
+  "title": "Host dispatch proposal v1alpha1",
+  "description": "A non-authorizing Router selection bound to caller and host catalog evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "status", "advisory", "selection", "bindings",
+    "authority_boundary", "privacy", "proposal_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "model_tier_router_host_dispatch_proposal_v1alpha1"
+    },
+    "status": {"type": "string", "const": "host_capability_required"},
+    "advisory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_id", "decision_sha256", "selected_profile",
+        "execution_authorized", "authorized_write_scope"
+      ],
+      "properties": {
+        "decision_id": {"type": "string", "minLength": 1, "maxLength": 200},
+        "decision_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "selected_profile": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,160}$"
+        },
+        "execution_authorized": {"type": "boolean", "const": false},
+        "authorized_write_scope": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "effort"],
+      "properties": {
+        "model": {"type": "string", "pattern": "^[A-Za-z0-9._:/+-]{1,200}$"},
+        "effort": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"}
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mapping_id", "model_map_sha256", "model_catalog_sha256",
+        "selected_model_entry_sha256", "origin_sha256",
+        "protocol_schema_sha256"
+      ],
+      "properties": {
+        "mapping_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,160}$"},
+        "model_map_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "model_catalog_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "selected_model_entry_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "origin_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "protocol_schema_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "authority_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "router_output_authorizes_launch", "host_capability_required",
+        "host_catalog_revalidation_required",
+        "host_entitlement_validation_required", "host_user_consent_required",
+        "permission_expansion_authorized"
+      ],
+      "properties": {
+        "router_output_authorizes_launch": {"type": "boolean", "const": false},
+        "host_capability_required": {"type": "boolean", "const": true},
+        "host_catalog_revalidation_required": {"type": "boolean", "const": true},
+        "host_entitlement_validation_required": {"type": "boolean", "const": true},
+        "host_user_consent_required": {"type": "boolean", "const": true},
+        "permission_expansion_authorized": {"type": "boolean", "const": false}
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt_persisted", "raw_request_persisted",
+        "raw_capability_persisted", "raw_turn_id_persisted"
+      ],
+      "properties": {
+        "prompt_persisted": {"type": "boolean", "const": false},
+        "raw_request_persisted": {"type": "boolean", "const": false},
+        "raw_capability_persisted": {"type": "boolean", "const": false},
+        "raw_turn_id_persisted": {"type": "boolean", "const": false}
+      }
+    },
+    "proposal_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

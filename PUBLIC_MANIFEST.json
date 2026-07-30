@@ -1,9 +1,9 @@
 {
   "schema_version": "model_tier_router_public_manifest_v2",
-  "base_public_head": "f30a0bd4209d475d88fb859c2d6f24279f6ad474",
-  "release_version": "0.2.0",
+  "base_public_head": "a37933758335c1e76075d69df7a13e5819f7275c",
+  "release_version": "0.3.0",
   "export_scope": "cleanroom_allowlist_plus_existing_public_main",
-  "file_count": 57,
+  "file_count": 63,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -17,8 +17,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "byte_count": 1022,
-      "sha256": "5b78d49455854f0a50a6e8c1652d3820bf12c8e2b4b0cdefa0fa2dbd50a40534"
+      "byte_count": 1609,
+      "sha256": "10db4d6cc69154abc2a139f591ba2b751d0596300b1a7a2946c9ddd4fa7b1d03"
     },
     {
       "path": "CODE_OF_CONDUCT.md",
@@ -42,8 +42,8 @@
     },
     {
       "path": "README.md",
-      "byte_count": 6677,
-      "sha256": "0db9595dab9a7c391ddb2795bb29895fc74f5f838c71465a45af7186c2a60eaf"
+      "byte_count": 8277,
+      "sha256": "0c54dedf595eacacdf0e523c8c9cfc1bfe4bdabaab5d1fdbcfafc20aa81a3f8c"
     },
     {
       "path": "SECURITY.md",
@@ -69,6 +69,11 @@
       "path": "docs/governed-mode.md",
       "byte_count": 938,
       "sha256": "5d1279670e8bde8e4939f1abd1aeae9b30d03ae74528f6bbfb76cbc3a42fe741"
+    },
+    {
+      "path": "docs/host-dispatch.md",
+      "byte_count": 5072,
+      "sha256": "afacaf4851613fa05a85dc7ee6d0599c56d541e459736f9fc25344b92b6e7998"
     },
     {
       "path": "examples/policies/default-policy.json",
@@ -117,8 +122,8 @@
     },
     {
       "path": "pyproject.toml",
-      "byte_count": 1555,
-      "sha256": "e519c6fa3a2fd77fd44920bce3ece725cf9fd7e6e32f72af3bc4abb8f73b53de"
+      "byte_count": 1696,
+      "sha256": "4a10fa198dacb34d87ee2113599b4aa6dd7ed5eefb5d86c55ac48cf9be29022b"
     },
     {
       "path": "schemas/advisory-decision.schema.json",
@@ -156,14 +161,29 @@
       "sha256": "14ed047d74a9423d5da61a2a38fc0bc285b507e4555af9602841ebd2ab691482"
     },
     {
+      "path": "schemas/host-dispatch-intent.schema.json",
+      "byte_count": 4463,
+      "sha256": "2f09d88c8578cabecbefd1140a4ad2c468b83547e2bb725d0a7e415b2db9d831"
+    },
+    {
+      "path": "schemas/host-dispatch-proposal.schema.json",
+      "byte_count": 4041,
+      "sha256": "e6aec3168828efe2906e5b897077a653dc06cc9030325051081e198f209976f8"
+    },
+    {
+      "path": "schemas/host-dispatch-receipt.schema.json",
+      "byte_count": 7374,
+      "sha256": "c9ed54cf47469bcf05ca45bd63f73236696df65db20075854e981ba01dba2a97"
+    },
+    {
       "path": "schemas/policy.schema.json",
       "byte_count": 3146,
       "sha256": "4b6eb93de49440df31ce0afa9d3d09a050ad1b49cc5d3e590cfe4f0ee07e4f54"
     },
     {
       "path": "src/model_tier_router/__init__.py",
-      "byte_count": 703,
-      "sha256": "e329a602c40eb553784974ecdfe7bdf209279825c7aad633000094b31c298f7c"
+      "byte_count": 1220,
+      "sha256": "ff9cf5d62e091b890f3cfdec056b9215a04d0cf72ce32d09b0f2d22362c2f01f"
     },
     {
       "path": "src/model_tier_router/api.py",
@@ -177,8 +197,8 @@
     },
     {
       "path": "src/model_tier_router/codex_app.py",
-      "byte_count": 26732,
-      "sha256": "9ce1406923b72f543a58172fd02352f6515aac80b1b4601a3a37909333ecea9e"
+      "byte_count": 26833,
+      "sha256": "ef62720b461e4b968ce136daf79a92c56ccefcbca52dd0e79da09e51da7335cc"
     },
     {
       "path": "src/model_tier_router/codex_bundle.py",
@@ -236,14 +256,19 @@
       "sha256": "b978be0f0c33a8179fed2645f64c8bb7ce7e163560f9a3436117cafa266f90eb"
     },
     {
+      "path": "src/model_tier_router/host_dispatch.py",
+      "byte_count": 38941,
+      "sha256": "edc5f855d93922a4def0947a8fb7c81bf056e8690d5e4130b1cde1c6e62a5281"
+    },
+    {
       "path": "src/model_tier_router/router.py",
       "byte_count": 488,
       "sha256": "5c4dc8f8a533d572ad62bd896124d7271313070de75ba3b7c415fc8237f24355"
     },
     {
       "path": "src/model_tier_router/schema_validation.py",
-      "byte_count": 13702,
-      "sha256": "d0eaef8b27818799969ddfc6ee2dbc100314fe716fe60e6474ee6b597ba7ceb8"
+      "byte_count": 14492,
+      "sha256": "d45d3586997ac2c42dbd09df48eb4842a628852b7b62610e83d63b2c5db06705"
     },
     {
       "path": "src/model_tier_router/strict_json.py",
@@ -277,18 +302,23 @@
     },
     {
       "path": "tests/integrations/test_cli_and_public_surface.py",
-      "byte_count": 8657,
-      "sha256": "90696e5e30ffe413001413828a6908d066d013afe2c76cc5555aa885aafd65b0"
+      "byte_count": 10190,
+      "sha256": "231b5cf5a0187c0abc42566ae2351fefad8beb5b452019f696515537cbc18d55"
     },
     {
       "path": "tests/integrations/test_codex_app.py",
-      "byte_count": 8967,
-      "sha256": "55ee9c9ff1bf608769574ff18b6f03a91e3a2762e878df986fbcf5c73cbe62ad"
+      "byte_count": 9240,
+      "sha256": "ae3b7b591766b9cfe89df5ada62d715edd226be06e62319c7a7a0498fefe9d07"
     },
     {
       "path": "tests/integrations/test_codex_bundle.py",
       "byte_count": 4210,
       "sha256": "e803665fc92561808a5dd8fccdaf7093efec9c717f482b4c11dbe0c581c0560b"
+    },
+    {
+      "path": "tests/integrations/test_host_dispatch.py",
+      "byte_count": 17722,
+      "sha256": "60674d8231a701343fd5fbf885d24aa91912fe694ebd757955ebefab37ba9f1f"
     }
   ]
 }

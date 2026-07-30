@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "model-tier-router"
-version = "0.2.0"
+version = "0.3.0"
 description = "Deterministic offline routing to logical LLM capability profiles"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,6 +37,9 @@ where = ["src"]
   "schemas/advisory-request.schema.json",
   "schemas/codex-app-development-event.schema.json",
   "schemas/capability-profile.schema.json",
+  "schemas/host-dispatch-intent.schema.json",
+  "schemas/host-dispatch-proposal.schema.json",
+  "schemas/host-dispatch-receipt.schema.json",
   "schemas/policy.schema.json",
   "schemas/governed/router-assessment.schema.json",
   "schemas/governed/router-decision.schema.json",
