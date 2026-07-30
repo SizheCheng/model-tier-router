@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SizheCheng/model-tier-router/main/schemas/host-dispatch-intent.schema.json",
+  "title": "Host dispatch intent v1alpha1",
+  "description": "A redacted exact-request binding that still requires an out-of-band host capability.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "status", "proposal_sha256", "request", "selection",
+    "host_bindings", "authority_boundary", "privacy", "intent_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "model_tier_router_host_dispatch_intent_v1alpha1"
+    },
+    "status": {"type": "string", "const": "host_capability_required"},
+    "proposal_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method", "request_id", "thread_id_sha256",
+        "non_selection_params_sha256", "exact_request_sha256",
+        "non_selection_params_preserved"
+      ],
+      "properties": {
+        "method": {"type": "string", "const": "turn/start"},
+        "request_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "thread_id_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "non_selection_params_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "exact_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "non_selection_params_preserved": {"type": "boolean", "const": true}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "effort"],
+      "properties": {
+        "model": {"type": "string", "pattern": "^[A-Za-z0-9._:/+-]{1,200}$"},
+        "effort": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"}
+      }
+    },
+    "host_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_request_binding_sha256", "host_context_binding_sha256",
+        "host_instance_sha256", "connection_sha256",
+        "consent_grant_sha256", "budget_lease_sha256"
+      ],
+      "properties": {
+        "host_request_binding_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "host_context_binding_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "host_instance_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "connection_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "consent_grant_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "budget_lease_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "authority_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "router_output_authorizes_launch", "host_capability_required",
+        "host_catalog_revalidation_required",
+        "host_entitlement_validation_required", "host_user_consent_required",
+        "permission_expansion_authorized", "selection_only_override",
+        "exact_request_binding_required"
+      ],
+      "properties": {
+        "router_output_authorizes_launch": {"type": "boolean", "const": false},
+        "host_capability_required": {"type": "boolean", "const": true},
+        "host_catalog_revalidation_required": {"type": "boolean", "const": true},
+        "host_entitlement_validation_required": {"type": "boolean", "const": true},
+        "host_user_consent_required": {"type": "boolean", "const": true},
+        "permission_expansion_authorized": {"type": "boolean", "const": false},
+        "selection_only_override": {"type": "boolean", "const": true},
+        "exact_request_binding_required": {"type": "boolean", "const": true}
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt_persisted", "raw_request_persisted",
+        "raw_capability_persisted", "raw_turn_id_persisted"
+      ],
+      "properties": {
+        "prompt_persisted": {"type": "boolean", "const": false},
+        "raw_request_persisted": {"type": "boolean", "const": false},
+        "raw_capability_persisted": {"type": "boolean", "const": false},
+        "raw_turn_id_persisted": {"type": "boolean", "const": false}
+      }
+    },
+    "intent_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

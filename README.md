@@ -6,9 +6,11 @@ soft-preference ranking and returns a machine-verifiable decision trace.
 
 Canonical repository: https://github.com/SizheCheng/model-tier-router
 
-The package does not call model providers, hold credentials, execute the
-recommendation, authorize writes, switch an active model, or automatically
-escalate.
+The advisory core does not call model providers, hold credentials, execute a
+recommendation, authorize writes, or automatically escalate. The optional
+host-dispatch SDK can bind a recommendation to a standard Codex `turn/start`
+request, but it cannot launch alone: only a caller-supplied trusted host driver
+may authenticate a separate capability and send the exact request.
 
 ## What it is
 
@@ -31,9 +33,10 @@ imply current provider pricing or benchmark superiority.
 
 ## Non-goals
 
-This project is not a provider gateway, hosted service, model executor,
-credential manager, telemetry system, billing layer, account system, web UI,
-or automatic model switcher.
+This project is not a provider gateway, hosted service, built-in model
+executor, credential manager, telemetry system, billing layer, account system,
+or web UI. It does not provide a capability issuer or an authenticated Codex
+host driver, and Router output alone never switches a model.
 
 ## Installation
 
@@ -149,6 +152,25 @@ required verifier ports are missing or reject. It does not dispatch providers.
 
 See [Governed mode](docs/governed-mode.md).
 
+## Host-controlled Codex dispatch
+
+Version 0.3 adds an optional public integration SDK under
+`model_tier_router.host_dispatch`. It binds an advisory decision, a
+caller-owned logical-profile map, and a Codex `model/list` result; then it
+prepares a standard `turn/start` request whose only overrides are `model` and
+`effort`.
+
+The capability remains out of band and is never inserted as an undocumented
+App Server field. A trusted host driver must atomically authenticate and consume
+that capability, revalidate catalog, entitlement, consent, transport, budget,
+and permission boundaries, send the exact request once, and attest the result.
+Proposal, intent, and receipt schemas persist only hashes and booleans—not the
+prompt, raw request, capability, credentials, or raw turn ID.
+
+The repository deliberately supplies the SDK contract but not the trusted host
+driver. See [Host-controlled Codex dispatch](docs/host-dispatch.md) for the
+protocol boundary and integration obligations.
+
 ## Codex integration
 
 An explicit-only integration is available at
@@ -167,10 +189,14 @@ change Router's non-authorizing contract.
 
 ## Security and privacy
 
-The core imports no provider, network, credential, subprocess, or file-writing
-module. It performs no telemetry. Requests may contain sensitive workload
-descriptions, so callers should minimize data and control local file access.
-Security vulnerabilities must be submitted through GitHub Private Vulnerability
+The advisory core imports no provider, network, credential, subprocess, or
+file-writing module and performs no telemetry. The optional host-dispatch SDK
+also performs no network or credential discovery; it calls an explicitly
+supplied host interface only after local inputs are validated. That host
+interface is a security boundary and must implement the atomic obligations in
+the integration guide. Requests may contain sensitive workload descriptions,
+so callers should minimize data and control local file access. Security
+vulnerabilities must be submitted through GitHub Private Vulnerability
 Reporting as described in [SECURITY.md](SECURITY.md).
 
 ## Compatibility

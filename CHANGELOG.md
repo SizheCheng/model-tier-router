@@ -2,6 +2,17 @@
 
 All notable changes use Semantic Versioning.
 
+## 0.3.0 - Host-controlled Codex dispatch contracts
+
+- Added a fail-closed SDK that binds advisory decisions and `model/list`
+  evidence to selection-only standard `turn/start` requests.
+- Added out-of-band `HostAtomicTurnLauncher` capability, nonce, entitlement,
+  consent, budget, transport, and attestation obligations.
+- Added closed proposal, intent, and receipt schemas with prompt, raw request,
+  capability, credential, and raw turn-ID exclusion.
+- Preserved the Router's non-authorizing contract and shipped no provider,
+  network, credential, or built-in host implementation.
+
 ## 0.2.0 - Managed Codex data integration
 
 - Added an optional local Codex lifecycle collector with bounded redaction,

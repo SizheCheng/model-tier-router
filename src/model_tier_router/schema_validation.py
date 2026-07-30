@@ -59,6 +59,9 @@ _SCHEMA_PATHS = {
     "advisory-decision.schema.json": "schemas/advisory-decision.schema.json",
     "advisory-request.schema.json": "schemas/advisory-request.schema.json",
     "capability-profile.schema.json": "schemas/capability-profile.schema.json",
+    "host-dispatch-intent.schema.json": "schemas/host-dispatch-intent.schema.json",
+    "host-dispatch-proposal.schema.json": "schemas/host-dispatch-proposal.schema.json",
+    "host-dispatch-receipt.schema.json": "schemas/host-dispatch-receipt.schema.json",
     "policy.schema.json": "schemas/policy.schema.json",
     "router-assessment.schema.json": "schemas/governed/router-assessment.schema.json",
     "router-decision.schema.json": "schemas/governed/router-decision.schema.json",
@@ -320,6 +323,18 @@ def validate_capability_profile(instance: Any) -> None:
     validate(instance, load_project_schema("capability-profile.schema.json"))
 
 
+def validate_host_dispatch_intent(instance: Any) -> None:
+    validate(instance, load_project_schema("host-dispatch-intent.schema.json"))
+
+
+def validate_host_dispatch_proposal(instance: Any) -> None:
+    validate(instance, load_project_schema("host-dispatch-proposal.schema.json"))
+
+
+def validate_host_dispatch_receipt(instance: Any) -> None:
+    validate(instance, load_project_schema("host-dispatch-receipt.schema.json"))
+
+
 def validate_policy(instance: Any) -> None:
     validate(instance, load_project_schema("policy.schema.json"))
 
@@ -342,8 +357,9 @@ def validate_validation_port_result(instance: Any) -> None:
 __all__ = [
     "SchemaValidationError", "load_project_schema", "validate",
     "validate_advisory_decision", "validate_advisory_request",
-    "validate_capability_profile", "validate_policy",
-    "validate_router_assessment", "validate_router_decision",
+    "validate_capability_profile", "validate_host_dispatch_intent",
+    "validate_host_dispatch_proposal", "validate_host_dispatch_receipt",
+    "validate_policy", "validate_router_assessment", "validate_router_decision",
     "validate_task_envelope",
     "validate_validation_port_result",
 ]
