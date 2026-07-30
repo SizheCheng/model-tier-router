@@ -1,7 +1,7 @@
 {
   "schema_version": "model_tier_router_public_manifest_v2",
-  "base_public_head": "a37933758335c1e76075d69df7a13e5819f7275c",
-  "release_version": "0.3.0",
+  "base_public_head": "554f31e460e4acb75550fcad022b2b43262ce921",
+  "release_version": "0.3.1",
   "export_scope": "cleanroom_allowlist_plus_existing_public_main",
   "file_count": 63,
   "files": [
@@ -17,8 +17,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "byte_count": 1609,
-      "sha256": "10db4d6cc69154abc2a139f591ba2b751d0596300b1a7a2946c9ddd4fa7b1d03"
+      "byte_count": 1914,
+      "sha256": "122c76ea9df00395bf60e9fcc1a05c4886b34cff71a4ac06f5bcc206d0804630"
     },
     {
       "path": "CODE_OF_CONDUCT.md",
@@ -123,7 +123,7 @@
     {
       "path": "pyproject.toml",
       "byte_count": 1696,
-      "sha256": "4a10fa198dacb34d87ee2113599b4aa6dd7ed5eefb5d86c55ac48cf9be29022b"
+      "sha256": "9f773570c56558dc95990bfe63245e0f45497812738bf81b96497d127571f533"
     },
     {
       "path": "schemas/advisory-decision.schema.json",
@@ -257,8 +257,8 @@
     },
     {
       "path": "src/model_tier_router/host_dispatch.py",
-      "byte_count": 38941,
-      "sha256": "edc5f855d93922a4def0947a8fb7c81bf056e8690d5e4130b1cde1c6e62a5281"
+      "byte_count": 39162,
+      "sha256": "5580711cab28f97ba3411176f34c5a5d20d6a5b61e7ca1baa2733a88cd846542"
     },
     {
       "path": "src/model_tier_router/router.py",
@@ -303,7 +303,7 @@
     {
       "path": "tests/integrations/test_cli_and_public_surface.py",
       "byte_count": 10190,
-      "sha256": "231b5cf5a0187c0abc42566ae2351fefad8beb5b452019f696515537cbc18d55"
+      "sha256": "bbc9decde5408726a37e616f662302a86e5ea85dc6664a9aebcf8812cef3e047"
     },
     {
       "path": "tests/integrations/test_codex_app.py",
@@ -317,8 +317,8 @@
     },
     {
       "path": "tests/integrations/test_host_dispatch.py",
-      "byte_count": 17722,
-      "sha256": "60674d8231a701343fd5fbf885d24aa91912fe694ebd757955ebefab37ba9f1f"
+      "byte_count": 20601,
+      "sha256": "c868af58a4a92ae1e1d8aff6b05ff7caf31246daf48e013bb4b3d16a1224bff6"
     }
   ]
 }

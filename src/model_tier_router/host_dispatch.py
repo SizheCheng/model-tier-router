@@ -745,10 +745,22 @@ def _turn_start_response(value: Any) -> tuple[dict[str, Any], str]:
         or turn.get("durationMs") not in (None,)
     ):
         raise HostDispatchError("TURN_START_RESPONSE_INVALID")
-    if "itemsView" in turn and turn["itemsView"] not in (None, []):
+    if "itemsView" in turn and (
+        not isinstance(turn["itemsView"], str)
+        or turn["itemsView"] not in {
+            "notLoaded",
+            "summary",
+            "full",
+        }
+    ):
         raise HostDispatchError("TURN_START_RESPONSE_INVALID")
-    if "startedAt" in turn and (
-        type(turn["startedAt"]) is not int or turn["startedAt"] < 0
+    if (
+        "startedAt" in turn
+        and turn["startedAt"] is not None
+        and (
+            type(turn["startedAt"]) is not int
+            or turn["startedAt"] < 0
+        )
     ):
         raise HostDispatchError("TURN_START_RESPONSE_INVALID")
     turn_id = _bounded_text(turn.get("id"), "TURN_START_RESPONSE_INVALID")

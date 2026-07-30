@@ -2,6 +2,13 @@
 
 All notable changes use Semantic Versioning.
 
+## 0.3.1 - Codex App Server response compatibility
+
+- Accept the current App Server `Turn.itemsView` enum in authenticated
+  `turn/start` responses.
+- Accept the schema-defined nullable `Turn.startedAt` field while continuing to
+  reject invalid view values, negative timestamps, and boolean timestamps.
+
 ## 0.3.0 - Host-controlled Codex dispatch contracts
 
 - Added a fail-closed SDK that binds advisory decisions and `model/list`
