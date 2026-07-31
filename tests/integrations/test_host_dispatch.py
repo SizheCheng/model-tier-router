@@ -191,6 +191,8 @@ class _Host:
                 "id": turn_id,
                 "status": "inProgress",
                 "items": [],
+                "itemsView": "full",
+                "startedAt": None,
                 "error": None,
             }
         }
@@ -438,6 +440,88 @@ class HostDispatchTests(unittest.TestCase):
         self.assertEqual(receipt["response"]["starts_consumed"], 1)
         self.assertIs(receipt["capability"]["nonce_consumed"], True)
         self.assertIs(receipt["host"]["entitlement_validated"], True)
+
+    def test_current_app_server_turn_metadata_is_accepted(self):
+        proposal = _proposal()
+        request, intent = build_atomic_launch_intent(
+            proposal,
+            _params(),
+            _bindings(),
+            request_id=48,
+        )
+
+        for items_view in ("notLoaded", "summary", "full"):
+            class CurrentSchemaHost(_Host):
+                def launch(
+                    self,
+                    capability_envelope,
+                    received_request,
+                    received_intent,
+                ):
+                    response, result = super().launch(
+                        capability_envelope,
+                        received_request,
+                        received_intent,
+                    )
+                    response["turn"]["itemsView"] = items_view
+                    response["turn"]["startedAt"] = None
+                    return response, result
+
+            response, receipt = launch_atomic_turn_start(
+                proposal,
+                intent,
+                request,
+                CAPABILITY,
+                CurrentSchemaHost(),
+                now=NOW,
+            )
+            self.assertEqual(response["turn"]["itemsView"], items_view)
+            self.assertIsNone(response["turn"]["startedAt"])
+            self.assertEqual(receipt["status"], "host_started")
+
+    def test_invalid_turn_metadata_fails_closed(self):
+        proposal = _proposal()
+        request, intent = build_atomic_launch_intent(
+            proposal,
+            _params(),
+            _bindings(),
+            request_id=49,
+        )
+
+        for field, value in (
+            ("itemsView", []),
+            ("itemsView", "complete"),
+            ("startedAt", -1),
+            ("startedAt", True),
+        ):
+            class InvalidSchemaHost(_Host):
+                def launch(
+                    self,
+                    capability_envelope,
+                    received_request,
+                    received_intent,
+                ):
+                    response, result = super().launch(
+                        capability_envelope,
+                        received_request,
+                        received_intent,
+                    )
+                    response["turn"][field] = value
+                    return response, result
+
+            with self.subTest(field=field, value=value):
+                with self.assertRaisesRegex(
+                    HostDispatchError,
+                    "TURN_START_RESPONSE_INVALID",
+                ):
+                    launch_atomic_turn_start(
+                        proposal,
+                        intent,
+                        request,
+                        CAPABILITY,
+                        InvalidSchemaHost(),
+                        now=NOW,
+                    )
 
     def test_boolean_budget_and_false_attestation_fail_closed(self):
         proposal = _proposal()
